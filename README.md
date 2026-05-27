@@ -271,19 +271,31 @@ steel-defect-detection/
 
 ## 更新日志
 
+### v2.1.0 (2026-05-27)
+
+- 📘 运维文档 `docs/operations.md`
+- 🔌 API 文档（健康检查、MJPEG 流、逐类性能表）
+- 🔬 SAHI 滑窗验证（结论：NEU-DET 小图不适用）
+- 🐛 markdownlint 修复
+
+### v2.0.0 (2026-05-27)
+
+- 🚀 YOLOv8s 训练完成：mAP50=0.906，P50=46ms
+- 🎤 语音命令（Web Speech API，20+ 指令）
+- 🎨 工业风双主题 UI + Logo SVG
+- ⚡ 快速预筛选（FFT + 统计特征）
+- 📊 系统监控告警引擎
+- 📦 ONNX 导出
+- 🐳 Docker 支持
+- ✅ 106 测试用例
+
 ### v1.0.0 (2026-05-26)
 
 - 初始版本发布
-- 基础YOLO+VLM双引擎架构
-- Gradio Web工作台
-- SQLite数据库存储
+- 基础 YOLO+VLM 双引擎架构
+- Gradio Web 工作台
+- SQLite 数据库存储
 - 基础文档和配置
-
-### v1.1.0 (计划中)
-
-- PLC硬触发支持
-- 系统监控告警
-- 性能优化和bug修复
 
 ## 许可证
 
