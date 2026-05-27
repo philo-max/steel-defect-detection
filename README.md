@@ -1,153 +1,48 @@
-# 钢铁表面缺陷检测系统
+# 钢铁表面缺陷检测系统 V2.0
 
-## 项目概述
+[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.12-red)](https://pytorch.org)
+[![YOLO](https://img.shields.io/badge/YOLO-v8s-orange)](https://ultralytics.com)
+[![Tests](https://img.shields.io/badge/tests-106%20passed-green)](tests/)
+[![mAP50](https://img.shields.io/badge/mAP50-0.906-brightgreen)](runs/train/)
 
-钢铁表面缺陷检测系统是一个基于深度学习的工业级智能质检平台，采用YOLO+VLM双引擎架构，实现钢铁表面缺陷的自动化检测、分类和根因分析。
+基于 **YOLOv8s + VLM + RAG 三引擎架构** 的工业级钢铁表面缺陷智能检测平台。
 
-**核心特性：**
+## 核心数据
 
-- ⚡ **YOLO快速筛查**：实时检测6类标准缺陷（裂纹、夹杂、斑块、麻点、轧制氧化皮、划痕）
-- 🧠 **VLM精细分析**：基于Gemini等大模型进行缺陷描述、严重程度评估和位置分析
-- 🔍 **RAG根因分析**：结合知识库进行缺陷根因推理和工艺优化建议
-- 📊 **全流程管理**：从图像采集、检测、人工审核到报表导出的一体化工作流
-- 🏭 **工业级设计**：支持PLC硬触发、多相机同步、实时监控告警
-
-## 技术架构
-
-### 系统架构图
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    Gradio Web 工作台                         │
-├─────────────┬─────────────┬─────────────┬─────────────┤
-│  实时检测    │  人工审核    │  统计报表    │  系统监控    │
-└─────────────┴─────────────┴─────────────┴─────────────┘
-        │              │              │              │
-┌───────▼──────────────▼──────────────▼──────────────▼───────┐
-│                双引擎检测服务 (YOLO + VLM)                   │
-├─────────────────────────────────────────────────────────────┤
-│   YOLO检测引擎  │  VLM分析引擎  │  RAG知识库  │  数据管理   │
-└─────────────────────────────────────────────────────────────┘
-        │              │              │              │
-┌───────▼──────────────▼──────────────▼──────────────▼───────┐
-│                工业相机接口 (PLC硬触发支持)                   │
-├─────────────────────────────────────────────────────────────┤
-│   USB相机    │  RTSP流    │  PLC信号    │  光源控制    │
-└─────────────────────────────────────────────────────────────┘
-
-```
-
-### 技术栈
-
-- **深度学习框架**：PyTorch 2.0+, Ultralytics YOLOv8
-- **视觉大模型**：Gemini API / Qwen API / OpenAI兼容接口
-- **Web界面**：Gradio 4.0+ (Python Web框架)
-- **数据处理**：OpenCV, NumPy, Pandas, Matplotlib
-- **数据库**：SQLite (轻量级本地存储)
-- **工业通信**：Modbus TCP (pymodbus)
-- **监控告警**：自定义健康检查 + 告警引擎
-- **部署方式**：Windows/Linux本地部署，支持Docker容器化
+| 指标 | 数值 |
+|------|------|
+| 检测模型 | YOLOv8s (11M 参数) |
+| mAP50 | **0.906** (NEU-DET) |
+| 推理延迟 | P50=46ms, ~143 FPS |
+| 支持缺陷 | 6 类 (裂纹/夹杂/斑块/麻点/氧化皮/划痕) |
+| 测试覆盖 | 106 passed, 0 failed |
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.8+
-- CUDA 11.x (GPU加速推荐) 或 CPU模式
-- Windows 10/11 或 Linux
-
-### 安装步骤
-
-1. **克隆项目**
-
 ```bash
-git clone <repository-url>
+git clone https://github.com/philo-max/steel-defect-detection.git
 cd steel-defect-detection
+setup.bat          # Windows 一键部署
+python app.py      # 启动工作台 → http://127.0.0.1:7860
 ```
 
-1. **创建虚拟环境**
+## 功能特性
 
-```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux/macOS
-source venv/bin/activate
-```
+- ⚡ **YOLO 筛查** — mAP50=0.906, 7ms推理
+- 🧠 **VLM 复核** — Gemini/Qwen 自动探测
+- 📚 **RAG 根因** — 缺陷→原因→工艺建议
+- 🎤 **语音控制** — 20+ 条语音指令
+- 🎨 **工业UI** — 深浅双主题, 钢铁之眼Logo
+- 📦 **多格式导出** — CSV / Bad Case / HTML
+- 📊 **系统监控** — GPU/CPU/相机健康检查
+- 🐳 **Docker** — 容器化部署支持
 
-1. **安装依赖**
+## 文档
 
-```bash
-pip install -r requirements.txt
-```
-
-1. **配置环境变量**
-
-```bash
-# 复制示例配置
-copy .env.example .env
-# 编辑.env文件，设置API密钥等
-```
-
-1. **下载预训练模型**
-
-```bash
-# 自动下载YOLO预训练权重
-python scripts/download_weights.py
-```
-
-### 运行系统
-
-1. **启动Gradio工作台**
-
-```bash
-python main.py
-# 或指定模式
-python main.py --mode app
-```
-
-1. **访问Web界面**
-打开浏览器访问：`http://127.0.0.1:7860`
-
-2. **命令行模式**
-
-```bash
-# 单张图像检测
-python main.py --mode detect --image path/to/image.jpg
-
-# 批量导出
-python main.py --mode export
-
-# 查看帮助
-python main.py --help
-```
-
-### 配置文件说明
-
-系统使用 `config.yaml` 进行配置，主要配置段：
-
-```yaml
-# 图像采集配置
-camera:
-  source: "0"  # 0=本地摄像头, rtsp://地址=网络流
-  width: 1920
-  height: 1080
-  fps: 30
-  trigger_mode: "continuous"  # continuous | plc_hardware
-
-# YOLO检测配置
-yolo:
-  model_path: "models/weights/steel_defect.pt"
-  conf_threshold: 0.05
-  device: "auto"  # auto, cuda:0, cpu
-
-# VLM配置
-vlm:
-  enabled: true
-  api_base: ""  # 留空自动检测可用API
-  model: "gemini-1.5-flash"
-
-# PLC硬触发配置
+- [用户手册](docs/user-manual.md)
+- [需求规格说明书](docs/需求规格说明书.md)
+- [GitHub](https://github.com/philo-max/steel-defect-detection)
 plc:
   enabled: false
   host: "192.168.1.100"
