@@ -54,5 +54,72 @@ class TestInferenceResult:
         assert result.inference_time_ms == 50.5
 
 
+# ========== YOLO 模型加载与推理测试 ==========
+
+@pytest.mark.slow
+class TestYOLODetectorModel:
+    """YOLO 模型实际加载测试（需模型文件）"""
+
+    @pytest.fixture(autouse=True)
+    def _check_model(self):
+        from pathlib import Path
+        model_path = Path("models/weights/yolov8n.pt")
+        if not model_path.exists():
+            model_path = Path("yolov8n.pt")
+        if not model_path.exists():
+            pytest.skip("YOLO model not found for testing")
+        self.model_path = str(model_path)
+
+    def test_load_model(self):
+        """加载 YOLO 模型不崩溃"""
+        from src.detection_engine import YOLODetector
+        detector = YOLODetector(
+            model_path=self.model_path,
+            conf_threshold=0.25,
+            device="cpu",  # 测试用 CPU 避免 GPU 占用
+        )
+        detector.load_model()
+        assert detector._model is not None
+
+    def test_detect_with_image(self):
+        """对合成图像执行推理"""
+        from src.detection_engine import YOLODetector
+        detector = YOLODetector(
+            model_path=self.model_path,
+            conf_threshold=0.95,  # 高阈值确保合成图像无检出
+            device="cpu",
+        )
+        detector.load_model()
+        img = np.ones((320, 320, 3), dtype=np.uint8) * 128
+        result = detector.detect(img)
+        assert result is not None
+        assert hasattr(result, 'detections')
+
+    def test_detect_with_high_conf(self):
+        """高置信度阈值应减少检出"""
+        from src.detection_engine import YOLODetector
+        detector = YOLODetector(
+            model_path=self.model_path,
+            conf_threshold=0.99,
+            device="cpu",
+        )
+        detector.load_model()
+        img = np.ones((320, 320, 3), dtype=np.uint8) * 128
+        result = detector.detect(img)
+        assert result.defect_count == 0, "Synthetic gray image should have no defects"
+
+    def test_confidence_threshold_setter(self):
+        """动态修改置信度阈值生效"""
+        from src.detection_engine import YOLODetector
+        detector = YOLODetector(
+            model_path=self.model_path,
+            conf_threshold=0.25,
+            device="cpu",
+        )
+        detector.load_model()
+        detector.conf_threshold = 0.88
+        assert detector.conf_threshold == 0.88
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
