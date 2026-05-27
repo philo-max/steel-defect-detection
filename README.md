@@ -56,7 +56,7 @@ curl http://127.0.0.1:7861/health
 
 ### MJPEG 视频流
 
-```
+```bash
 http://127.0.0.1:7861/camera
 ```
 
@@ -71,6 +71,9 @@ http://127.0.0.1:7861/camera
 | rolled-in-scale 氧化皮 | 0.609 |
 | scratches 划痕 | 0.978 |
 | **总体** | **0.906** |
+
+```yaml
+# PLC 触发配置
 plc:
   enabled: false
   host: "192.168.1.100"
