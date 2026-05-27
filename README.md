@@ -1,4 +1,4 @@
-# 钢铁表面缺陷检测系统 V2.0
+# 钢铁表面缺陷检测系统 V2.1
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.12-red)](https://pytorch.org)
