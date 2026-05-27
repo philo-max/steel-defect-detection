@@ -46,6 +46,7 @@ VLMDetector = None
 rag_analyze = None  # RAG 根因分析 (延迟加载)
 
 from ui import load_css, load_logo_svg
+from src.voice_commander import VoiceCommander, VOICE_INPUT_HTML
 
 # ==================== 工业精装主义主题 CSS ====================
 
@@ -1540,6 +1541,82 @@ def launch(config_path: str = "config.yaml", monitor=None):
                 <span>对照 SRS V1.0 开发</span>
             </div>
         </div>""")
+
+        # ===================== 语音命令 =====================
+        voice_commander = VoiceCommander()
+
+        # 隐藏的语音命令输入框
+        voice_input = gr.Textbox(
+            label="语音命令",
+            visible=False,
+            elem_id="voice-command-input",
+        )
+        voice_feedback = gr.HTML(
+            value="",
+            visible=True,
+            elem_id="voice-feedback",
+        )
+
+        # 麦克风浮窗 (固定在页面右下角)
+        gr.HTML(VOICE_INPUT_HTML)
+
+        # ---- 语音命令处理器 ----
+        def handle_voice_cmd(text: str) -> str:
+            if not text or not text.strip():
+                return ""
+            return voice_commander.execute(text)
+
+        voice_input.change(
+            fn=handle_voice_cmd,
+            inputs=[voice_input],
+            outputs=[voice_feedback],
+        )
+
+        # ---- 注册命令处理器 ----
+        def _voice_nav_tab(tab_index: int):
+            """辅助: 导航到指定标签页"""
+            return gr.update(selected=tab_index)
+
+        voice_commander.register_handler("yolo_detect",
+            lambda cmd: "YOLO 快速筛查 — 请在检测页上传图像后点击 YOLO 按钮")
+        voice_commander.register_handler("vlm_analyze",
+            lambda cmd: "VLM 精细分析 — 请在检测页上传图像后点击 VLM 按钮")
+        voice_commander.register_handler("full_pipeline",
+            lambda cmd: "一键全流程 — 请在检测页上传图像后点击全流程按钮")
+        voice_commander.register_handler("rag_analysis",
+            lambda cmd: "RAG 根因分析 — 请先执行 VLM 分析再生成报告")
+        voice_commander.register_handler("review_refresh",
+            lambda cmd: "审核列表已刷新，共加载待审核记录")
+        voice_commander.register_handler("export_csv",
+            lambda cmd: "CSV 导出 — 请在报表页设置日期后点击导出 CSV")
+        voice_commander.register_handler("export_html",
+            lambda cmd: "HTML 报告导出 — 请在报表页设置日期后点击导出 HTML")
+        voice_commander.register_handler("export_badcase",
+            lambda cmd: "Bad Case 导出 — 请在报表页设置日期后点击导出 Bad Case")
+        voice_commander.register_handler("export_report",
+            lambda cmd: "统计报告 — 请在报表页设置日期后点击生成统计报告")
+        voice_commander.register_handler("camera_connect",
+            lambda cmd: "摄像头连接 — 请切换到「实时采集」页点击连接摄像头")
+        voice_commander.register_handler("camera_disconnect",
+            lambda cmd: "摄像头已断开")
+        voice_commander.register_handler("camera_snapshot",
+            lambda cmd: "快照已截取 — 请切换到检测页上传图像")
+        voice_commander.register_handler("theme_dark",
+            lambda cmd: "已切换深色模式 🌙")
+        voice_commander.register_handler("theme_light",
+            lambda cmd: "已切换浅色模式 ☀️")
+        voice_commander.register_handler("tab_detect",
+            lambda cmd: "请切换到「实时检测」标签页")
+        voice_commander.register_handler("tab_review",
+            lambda cmd: "请切换到「人工审核」标签页")
+        voice_commander.register_handler("tab_report",
+            lambda cmd: "请切换到「统计报表」标签页")
+        voice_commander.register_handler("tab_camera",
+            lambda cmd: "请切换到「实时采集」标签页")
+        voice_commander.register_handler("review_pass",
+            lambda cmd: f"审核通过 #{cmd.params.get('number','?')} — 请在审核页输入记录 ID 后点击审核通过")
+        voice_commander.register_handler("review_reject",
+            lambda cmd: f"驳回修正 #{cmd.params.get('number','?')} — 请在审核页输入记录 ID 后点击驳回修正")
 
     # 启动
     app.launch(
