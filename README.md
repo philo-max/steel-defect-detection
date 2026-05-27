@@ -41,8 +41,36 @@ python app.py      # 启动工作台 → http://127.0.0.1:7860
 ## 文档
 
 - [用户手册](docs/user-manual.md)
+- [运维文档](docs/operations.md)
 - [需求规格说明书](docs/需求规格说明书.md)
 - [GitHub](https://github.com/philo-max/steel-defect-detection)
+
+## API
+
+### 健康检查
+
+```bash
+curl http://127.0.0.1:7861/health
+# {"status":"healthy","gpu":{"available":true,"memory_usage":78.5},...}
+```
+
+### MJPEG 视频流
+
+```
+http://127.0.0.1:7861/camera
+```
+
+### 逐类性能
+
+| 类别 | mAP50 |
+|------|:-----:|
+| crazing 裂纹 | 0.993 |
+| inclusion 夹杂 | 0.749 |
+| patches 斑块 | 0.995 |
+| pitted_surface 麻点 | 0.995 |
+| rolled-in-scale 氧化皮 | 0.609 |
+| scratches 划痕 | 0.978 |
+| **总体** | **0.906** |
 plc:
   enabled: false
   host: "192.168.1.100"
