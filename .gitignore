@@ -1,0 +1,44 @@
+# 忽略文件
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# 模型文件 (过大，需要单独管理)
+models/weights/*.pt
+models/weights/*.onnx
+models/weights/*.engine
+
+# 训练输出
+runs/
+
+# 数据和导出
+data/images/
+data/exports/
+data/inspection.db
+data/inspection.db-shm
+data/inspection.db-wal
+*.db-journal
+
+# 日志
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+tmp/
+.pytest_cache/
+
+
+# OS
+.DS_Store
+Thumbs.db

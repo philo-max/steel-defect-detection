@@ -1,0 +1,164 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 金属六边形渐变 -->
+    <linearGradient id="hexMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2d2d4a"/>
+      <stop offset="30%" stop-color="#1e1e38"/>
+      <stop offset="60%" stop-color="#303050"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <!-- 描边渐变 -->
+    <linearGradient id="hexStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="50%" stop-color="#ff8c5a"/>
+      <stop offset="100%" stop-color="#d45a2c"/>
+    </linearGradient>
+    <!-- 瞳孔渐变 -->
+    <radialGradient id="pupilGlow" cx="50%" cy="45%" r="35%">
+      <stop offset="0%" stop-color="#ffaa7a"/>
+      <stop offset="30%" stop-color="#ff6b35"/>
+      <stop offset="65%" stop-color="#cc4400"/>
+      <stop offset="100%" stop-color="#661a00"/>
+    </radialGradient>
+    <!-- 内环金属 -->
+    <radialGradient id="ringMetal" cx="30%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#353555"/>
+      <stop offset="50%" stop-color="#202038"/>
+      <stop offset="100%" stop-color="#151528"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="200" height="200" fill="#0d0d1a" rx="8"/>
+
+  <!-- 外层装饰六边形 -->
+  <polygon points="100,10 172,52 172,148 100,190 28,148 28,52"
+    fill="none" stroke="#ff6b35" stroke-width="1" opacity="0.15" stroke-dasharray="6 4"/>
+
+  <!-- 主六边形底盘（金属质感） -->
+  <polygon points="100,18 168,58 168,142 100,182 32,142 32,58"
+    fill="url(#hexMetal)" stroke="url(#hexStroke)" stroke-width="3.5" stroke-linejoin="round"/>
+
+  <!-- 电路纹（左） -->
+  <g opacity="0.3" stroke="#ff6b35" stroke-width="1.2" fill="none">
+    <polyline points="48,100 58,100 58,84 68,84"/>
+    <circle cx="68" cy="84" r="2" fill="#ff6b35"/>
+    <polyline points="48,120 56,120"/>
+    <circle cx="56" cy="120" r="1.5" fill="#ff6b35"/>
+  </g>
+
+  <!-- 电路纹（右） -->
+  <g opacity="0.3" stroke="#ff6b35" stroke-width="1.2" fill="none">
+    <polyline points="152,100 142,100 142,116 132,116"/>
+    <circle cx="132" cy="116" r="2" fill="#ff6b35"/>
+    <polyline points="152,80 144,80"/>
+    <circle cx="144" cy="80" r="1.5" fill="#ff6b35"/>
+  </g>
+
+  <!-- 四角锚点 -->
+  <g opacity="0.5" stroke="#ff6b35" stroke-width="1.5" fill="none">
+    <polyline points="55,74 60,74 60,79"/>
+    <polyline points="140,74 145,74 145,79"/>
+    <polyline points="55,122 60,122 60,126"/>
+    <polyline points="140,122 145,122 145,126"/>
+  </g>
+
+  <!-- 外框刻度 -->
+  <g opacity="0.25" stroke="#ff6b35" stroke-width="1.5">
+    <line x1="78" y1="60" x2="78" y2="64"/>
+    <line x1="122" y1="60" x2="122" y2="64"/>
+    <line x1="44" y1="90" x2="48" y2="90"/>
+    <line x1="44" y1="110" x2="48" y2="110"/>
+    <line x1="152" y1="90" x2="156" y2="90"/>
+    <line x1="152" y1="110" x2="156" y2="110"/>
+  </g>
+
+  <!-- 顶点三角 -->
+  <g opacity="0.35">
+    <polygon points="100,42 103,47 97,47" fill="#ff6b35"/>
+    <line x1="100" y1="18" x2="100" y2="42" stroke="#ff6b35" stroke-width="1"/>
+    <polygon points="100,158 103,153 97,153" fill="#ff6b35"/>
+    <line x1="100" y1="158" x2="100" y2="182" stroke="#ff6b35" stroke-width="1"/>
+  </g>
+
+  <!-- 内六边形（眼睛容器） -->
+  <polygon points="100,46 144,72 144,128 100,154 56,128 56,72"
+    fill="url(#ringMetal)" stroke="#ff6b35" stroke-width="2" opacity="0.9"/>
+
+  <!-- 网格坐标 -->
+  <g opacity="0.1" stroke="#ff6b35" stroke-width="0.6">
+    <line x1="62" y1="88" x2="138" y2="88"/>
+    <line x1="64" y1="102" x2="136" y2="102"/>
+    <line x1="69" y1="116" x2="131" y2="116"/>
+    <line x1="80" y1="67" x2="80" y2="133"/>
+    <line x1="100" y1="58" x2="100" y2="142"/>
+    <line x1="120" y1="67" x2="120" y2="133"/>
+  </g>
+
+  <!-- 眼睛主体 -->
+  <g filter="url(#glow)">
+    <!-- 虹膜外圈 -->
+    <circle cx="100" cy="100" r="38" fill="none" stroke="#ff6b35" stroke-width="2.5" opacity="0.8"/>
+    <circle cx="100" cy="100" r="35" fill="none" stroke="#ff6b35" stroke-width="0.8" opacity="0.3"/>
+
+    <!-- 虹膜填充 -->
+    <circle cx="100" cy="100" r="34" fill="#1a1028" opacity="0.9"/>
+
+    <!-- 虹膜辐射线 -->
+    <g opacity="0.15" stroke="#ff6b35" stroke-width="0.6">
+      <line x1="100" y1="68" x2="100" y2="72"/>
+      <line x1="100" y1="128" x2="100" y2="132"/>
+      <line x1="68" y1="100" x2="72" y2="100"/>
+      <line x1="128" y1="100" x2="132" y2="100"/>
+      <line x1="77" y1="77" x2="80" y2="80"/>
+      <line x1="120" y1="120" x2="123" y2="123"/>
+      <line x1="123" y1="77" x2="120" y2="80"/>
+      <line x1="80" y1="120" x2="77" y2="123"/>
+    </g>
+
+    <!-- 虹膜同心环 -->
+    <g opacity="0.12" fill="none" stroke="#ff6b35" stroke-width="0.8">
+      <circle cx="100" cy="100" r="18"/>
+      <circle cx="100" cy="100" r="26"/>
+    </g>
+
+    <!-- 瞳孔 -->
+    <circle cx="100" cy="100" r="13" fill="url(#pupilGlow)"/>
+    <circle cx="100" cy="100" r="13" fill="none" stroke="#1a0500" stroke-width="1.5"/>
+
+    <!-- 瞳孔高光 -->
+    <ellipse cx="96" cy="96" rx="5" ry="3.5" fill="white" opacity="0.55"/>
+    <circle cx="95" cy="95" r="2" fill="white" opacity="0.7"/>
+  </g>
+
+  <!-- 瞳孔裂痕（缺陷隐喻，静态） -->
+  <g filter="url(#softGlow)">
+    <polyline points="104,92 108,94 107,98 110,103"
+      fill="none" stroke="#ff3333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+    <polyline points="95,103 98,104 100,107"
+      fill="none" stroke="#ff4444" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+  </g>
+
+  <!-- 绿色十字准星 -->
+  <g opacity="0.5">
+    <line x1="100" y1="86" x2="100" y2="92" stroke="#00ff88" stroke-width="1"/>
+    <line x1="100" y1="108" x2="100" y2="114" stroke="#00ff88" stroke-width="1"/>
+    <line x1="86" y1="100" x2="92" y2="100" stroke="#00ff88" stroke-width="1"/>
+    <line x1="108" y1="100" x2="114" y2="100" stroke="#00ff88" stroke-width="1"/>
+  </g>
+
+  <!-- 底部品牌文字 -->
+  <text x="100" y="192" text-anchor="middle"
+    font-family="'Segoe UI','Arial Black',system-ui,sans-serif"
+    font-size="8" font-weight="900" letter-spacing="0.08em" fill="#ff6b35" opacity="0.7">
+    STEEL-DETECT
+  </text>
+</svg>

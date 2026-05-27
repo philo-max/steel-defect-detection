@@ -1,0 +1,15 @@
+[Unit]
+Description=Steel Defect Detection System
+After=network.target
+
+[Service]
+Type=simple
+User=steel
+WorkingDirectory=/opt/steel-defect-detection
+ExecStart=/opt/steel-defect-detection/.venv/bin/python main.py --mode app
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

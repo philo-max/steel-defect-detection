@@ -1,0 +1,176 @@
+# ============================================================
+# 钢铁表面缺陷检测系统 - 配置文件
+# ============================================================
+
+# --- 系统 ---
+system:
+  name: "steel-defect-detection"
+  version: "1.0.0"
+  log_level: "INFO"
+  log_dir: "./logs"
+
+# --- 图像采集 ---
+camera:
+  source: "rtsp://192.168.1.100:554/stream"  # RTSP 流地址，或 0 表示本地摄像头
+  width: 1920
+  height: 1080
+  fps: 30
+  buffer_size: 10  # 帧缓存队列大小
+  trigger_mode: "continuous"  # continuous | software | hardware (PLC硬触发)
+
+# --- PLC 硬触发 ---
+plc:
+  enabled: false                       # 是否启用PLC硬触发
+  host: "192.168.1.100"               # PLC IP地址
+  port: 502                            # Modbus TCP端口
+  trigger_address: 0                   # 触发信号寄存器地址
+  feedback_address: 1                  # 反馈信号寄存器地址
+  trigger_edge: "rising"              # 触发边沿: rising | falling | both
+  debounce_time: 0.1                   # 防抖时间(秒)
+  timeout: 5.0                         # 通信超时(秒)
+  retry_interval: 1.0                  # 重连间隔(秒)
+  max_retries: 3                       # 最大重试次数
+  unit_id: 1                           # Modbus单元ID
+
+# --- 两阶段快速筛查 (FastScreener) ---
+# 第一阶段：轻量异常筛查，过滤 ~90% 正常帧
+fast_screener:
+  enabled: false                      # 是否启用预筛查（调试时建议关闭）
+  mode: "balanced"                    # bypass | strict | balanced | aggressive
+  combo_threshold: 0.45               # 综合异常分数阈值 (0-1，越低越敏感)
+  fft_threshold: 0.35                 # 频域异常阈值
+  std_threshold: 0.30                 # 标准差异常阈值
+  edge_threshold: 0.40                # 边缘密度阈值
+  resize_to: 256                      # 筛查缩放尺寸
+  adaptive_threshold: true            # 自适应动态阈值
+
+# --- SAHI 滑窗小目标增强 ---
+# 对高分辨率图像自动切块推理，提升小缺陷检出率
+sahi:
+  enabled: false                      # 是否启用 SAHI（高分辨率相机建议开启）
+  slice_size: 640                     # 切片尺寸
+  overlap_ratio: 0.2                  # 切片重叠比例
+  auto_slice: true                    # 自适应切片（根据图像尺寸自动调整）
+  min_defect_size_px: 20              # 期望检测的最小缺陷像素数
+  postprocess_match_threshold: 0.5    # 跨切片 NMS 阈值
+  class_agnostic: true                # 跨类别 NMS 抑制
+
+# --- TensorRT 推理加速 ---
+# 将 YOLO 模型转换为 TensorRT Engine，显著降低延迟
+tensorrt:
+  enabled: false                      # 是否使用 TensorRT（需 GPU + tensorrt 库）
+  engine_path: "models/weights/yolov8n.engine"  # Engine 文件路径
+  fp16: true                          # FP16 精度
+  int8: false                         # INT8 量化（需校准数据）
+  workspace_gb: 4                     # 最大工作空间 (GB)
+
+# --- 线阵相机 ---
+# 线阵相机逐行扫描 → 累积为 2D 帧
+linescan:
+  enabled: false                      # 是否使用线阵相机模式
+  mode: "simulation"                  # simulation | realtime
+  line_width: 8192                    # 行像素宽度 (8K = 8192)
+  frame_height: 4096                  # 累积行数
+  line_rate_hz: 20000                 # 行扫描频率
+  source_image: ""                    # 仿真模式源图像路径
+  strip_speed_ms: 10.0               # 带钢运行速度 (m/s)
+  target_resolution_um: 50.0         # 目标像素分辨率 (μm)
+
+# --- YOLO 检测引擎 ---
+yolo:
+  model_path: "models/weights/steel_defect.pt"
+  conf_threshold: 0.05
+  iou_threshold: 0.45
+  img_size: 640
+  device: "auto"           # auto=cuda:0 if available, else cpu
+  half: true               # FP16 (GPU only) — RTX 5060 支持
+
+# --- VLM 检测引擎 ---
+vlm:
+  enabled: true
+  api_base: ""               # 留空自动检测 (VLM_API_KEY > Gemini > Qwen)
+  model: ""                  # 留空自动选择默认模型
+  max_tokens: 4096
+  temperature: 0.1
+  timeout: 60  # API 超时秒数
+  max_retries: 3
+  conf_threshold: 0.5  # VLM 介入的 YOLO 置信度阈值
+  prompt_template: |
+    你是一名钢铁表面缺陷检测专家。请分析这张钢板表面图像，判断是否存在以下缺陷类型：
+    裂纹(crack)、划痕(scratch)、氧化皮(scale)、压痕(indentation)、气泡(blister)。
+    请以 JSON 格式返回检测结果，包含缺陷类型、位置描述和置信度。
+
+# --- 数据库 ---
+database:
+  path: "data/inspection.db"
+  backup_interval_hours: 24
+
+# --- 导出 ---
+export:
+  csv_dir: "data/exports/csv"
+  html_dir: "data/exports/reports"
+  badcase_dir: "data/exports/badcase"
+  image_format: "jpg"
+
+# --- Gradio ---
+gradio:
+  server_name: "0.0.0.0"
+  server_port: 7860
+  share: false
+  theme: "soft"
+  auth: ["admin:steel2026"]  # 默认认证，生产环境请修改密码
+
+# --- 双引擎协同 ---
+pipeline:
+  vlm_fallback: true         # VLM 不可用时 YOLO 兜底
+  save_all_images: false     # 是否保存所有图像
+  save_defect_only: true     # 仅保存有缺陷的图像
+  review_required: true      # 是否要求人工审核
+
+# --- 系统监控与告警 ---
+monitor:
+  enabled: true              # 是否启用监控
+  check_interval: 60         # 健康检查间隔(秒)
+  
+  # 告警规则
+  alert_rules:
+    # GPU告警
+    gpu_memory: 90           # GPU内存使用率阈值(%)
+    gpu_temperature: 85      # GPU温度阈值(℃)
+    
+    # CPU告警
+    cpu_usage: 90            # CPU使用率阈值(%)
+    cpu_temperature: 80      # CPU温度阈值(℃)
+    
+    # 内存告警
+    memory_usage: 90         # 内存使用率阈值(%)
+    
+    # 磁盘告警
+    disk_usage: 90           # 磁盘使用率阈值(%)
+    
+    # 性能告警
+    inference_delay: 1000    # 推理延迟阈值(ms)
+    camera_fps: 10           # 相机帧率阈值(FPS)
+    
+    # 业务告警
+    defect_rate: 10          # 缺陷率异常阈值(%)
+    false_positive_rate: 5   # 误检率阈值(%)
+  
+  # 告警通知
+  notifications:
+    email:
+      enabled: false
+      smtp_server: ""
+      smtp_port: 587
+      username: ""
+      password: ""
+      receivers: []
+    
+    dingtalk:
+      enabled: false
+      webhook: ""
+      secret: ""
+    
+    wechat:
+      enabled: false
+      webhook: ""

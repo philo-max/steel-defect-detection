@@ -1,0 +1,451 @@
+/* ===== 工业精装主义 — 深浅双主题系统 ===== */
+
+/* ---------- 浅色主题 (默认) ---------- */
+:root {
+    --ind-orange: #ff6b35;
+    --ind-orange-light: #ff8c5a;
+    --ind-orange-dark: #d45a2c;
+    --warn-red: #e63946;
+    --safe-green: #2a9d8f;
+    --info-blue: #457b9d;
+    /* 浅色变量 */
+    --bg-page: #f0f2f5;
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --bg-header: #ffffff;
+    --bg-footer: #ffffff;
+    --bg-tab: #f8f9fa;
+    --bg-table: #ffffff;
+    --bg-hover: #f0f2f5;
+    --text-primary: #1a1a2e;
+    --text-secondary: #555;
+    --text-muted: #888;
+    --text-inverse: #ffffff;
+    --border-color: #e0e0e0;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --header-accent: #ff6b35;
+}
+
+/* ---------- 深色主题 ---------- */
+[data-theme="dark"] {
+    --bg-page: #0d0d0d;
+    --bg-card: #1e1e1e;
+    --bg-input: #2a2a2a;
+    --bg-header: #1a1a1a;
+    --bg-footer: #1a1a1a;
+    --bg-tab: #1e1e1e;
+    --bg-table: #1a1a1a;
+    --bg-hover: #2a2a2a;
+    --text-primary: #e8e8e8;
+    --text-secondary: #b0b0b0;
+    --text-muted: #777;
+    --text-inverse: #ffffff;
+    --border-color: #333;
+    --shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+
+/* ===== 全局 ===== */
+body, .gradio-container {
+    background: var(--bg-page) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Segoe UI', system-ui, sans-serif !important;
+    transition: background 0.3s, color 0.3s;
+}
+
+/* ===== 主题切换按钮 ===== */
+.theme-toggle-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color);
+    background: var(--bg-input); color: var(--text-primary);
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.2s;
+}
+.theme-toggle-btn:hover { border-color: var(--ind-orange); color: var(--ind-orange); }
+
+/* ===== 顶部导航 ===== */
+.industrial-header {
+    background: var(--bg-header);
+    border-bottom: 3px solid var(--ind-orange);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    position: relative; overflow: hidden;
+    box-shadow: var(--shadow);
+}
+.header-rivet-bar {
+    height: 3px;
+    background: repeating-linear-gradient(90deg, transparent, transparent 4px, #ddd 4px, #ddd 8px);
+}
+[data-theme="dark"] .header-rivet-bar {
+    background: repeating-linear-gradient(90deg, transparent, transparent 4px, #444 4px, #444 8px);
+}
+.header-content {
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo-hex {
+    width: 52px; height: 52px;
+    border-radius: 10px;
+    overflow: hidden;
+    object-fit: contain;
+}
+.logo-title {
+    font-family: 'Segoe UI', 'Arial Black', sans-serif !important;
+    font-size: 22px !important; font-weight: 900 !important;
+    letter-spacing: 0.04em;
+}
+/* Light mode */
+html:not([data-theme="dark"]) .logo-title {
+    color: #1a1a2e !important;
+    -webkit-text-fill-color: #1a1a2e !important;
+}
+/* Dark mode */
+html[data-theme="dark"] .logo-title {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    text-shadow: 0 0 20px rgba(100, 180, 240, 0.6);
+}
+.logo-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.header-status-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.status-led-group {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-secondary);
+    background: var(--bg-hover);
+    padding: 5px 12px; border-radius: 20px;
+    border: 1px solid var(--border-color);
+}
+.led-dot { width: 10px; height: 10px; border-radius: 50%; }
+.led-green { background: var(--safe-green); box-shadow: 0 0 8px var(--safe-green); animation: led-pulse 2s infinite; }
+.led-blue  { background: var(--info-blue); box-shadow: 0 0 8px var(--info-blue); }
+.led-orange { background: var(--ind-orange); box-shadow: 0 0 8px var(--ind-orange); animation: led-blink 1.5s infinite; }
+@keyframes led-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+@keyframes led-blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ===== 统计卡片 ===== */
+.industrial-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px; padding: 18px 20px;
+    position: relative; overflow: hidden;
+    box-shadow: var(--shadow);
+}
+.industrial-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--ind-orange), transparent);
+}
+.card-icon-row {
+    font-size: 11px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+}
+.card-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-blue { background: var(--info-blue); box-shadow: 0 0 6px var(--info-blue); }
+.dot-red { background: var(--warn-red); box-shadow: 0 0 6px var(--warn-red); animation: led-blink 1s infinite; }
+.dot-orange { background: var(--ind-orange); box-shadow: 0 0 6px var(--ind-orange); }
+.dot-green { background: var(--safe-green); box-shadow: 0 0 6px var(--safe-green); }
+.card-big-num {
+    font-family: 'Segoe UI', 'Arial Black', sans-serif;
+    font-size: 32px; font-weight: 700;
+    color: var(--ind-orange);
+    margin: 4px 0;
+}
+.card-sub { font-size: 11px; color: var(--text-muted); }
+
+/* ===== 底部栏 ===== */
+.industrial-footer {
+    background: var(--bg-footer);
+    border-top: 3px solid var(--border-color);
+    border-radius: 10px; margin-top: 20px;
+    position: relative; overflow: hidden;
+    box-shadow: var(--shadow);
+}
+.footer-rivet-bar {
+    height: 3px;
+    background: repeating-linear-gradient(90deg, transparent, transparent 4px, #ddd 4px, #ddd 8px);
+}
+[data-theme="dark"] .footer-rivet-bar {
+    background: repeating-linear-gradient(90deg, transparent, transparent 4px, #444 4px, #444 8px);
+}
+.footer-content {
+    padding: 10px 20px;
+    font-size: 11px; color: var(--text-muted);
+    text-align: center;
+    display: flex; justify-content: center; gap: 6px;
+    flex-wrap: wrap;
+}
+.footer-sep { color: var(--border-color); }
+
+/* ===== 按钮工业风 ===== */
+button.primary, button[variant="primary"] {
+    background: linear-gradient(135deg, var(--ind-orange), var(--ind-orange-dark)) !important;
+    border: 1px solid var(--ind-orange-light) !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 8px rgba(255,107,53,0.25) !important;
+    transition: all 150ms !important;
+}
+button.primary:hover, button[variant="primary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 16px rgba(255,107,53,0.4) !important;
+}
+button.secondary, button[variant="secondary"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 6px !important;
+}
+button.stop, button[variant="stop"] {
+    background: var(--warn-red) !important;
+    border: 1px solid var(--warn-red) !important;
+    color: #fff !important;
+    border-radius: 6px !important;
+}
+
+/* ===== Tab 标签页 ===== */
+.tabs, .tab-nav {
+    background: transparent !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 8px !important;
+}
+.tab-nav button {
+    color: var(--text-secondary) !important;
+    font-weight: 600 !important;
+    padding: 10px 18px !important;
+    background: transparent !important;
+}
+.tab-nav button.selected {
+    color: var(--ind-orange) !important;
+    border-bottom: 2px solid var(--ind-orange) !important;
+    background: rgba(255,107,53,0.06) !important;
+}
+
+/* ===== 输入控件 ===== */
+input, textarea, select {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+}
+label, .label-text, legend {
+    color: var(--text-secondary) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+}
+
+/* ===== Accordion ===== */
+.accordion, .panel {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 8px !important;
+    color: var(--text-primary) !important;
+}
+
+/* ===== Dataframe/Table ===== */
+table, .dataframe, .table-wrap {
+    background: var(--bg-table) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+th, thead td {
+    background: var(--bg-hover) !important;
+    color: var(--ind-orange) !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    letter-spacing: 0.04em !important;
+}
+tr:nth-child(even) { background: var(--bg-hover) !important; }
+
+/* ===== Markdown / 文本 ===== */
+.prose, .markdown-body, .md, .svelte-vt1mxs {
+    color: var(--text-primary) !important;
+}
+.prose h1, .prose h2, .prose h3, .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    color: var(--ind-orange) !important;
+}
+.prose p, .markdown-body p, .markdown-body li { color: var(--text-primary) !important; }
+.prose em, .markdown-body em { color: var(--text-secondary) !important; }
+.prose strong, .markdown-body strong { color: var(--ind-orange) !important; }
+blockquote {
+    background: var(--bg-hover) !important;
+    border-left: 3px solid var(--ind-orange) !important;
+    color: var(--text-secondary) !important;
+}
+
+/* ===== Dropdown / Radio / Checkbox ===== */
+.dropdown, .options-container, fieldset {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+}
+.radio-item label, .checkbox-item label {
+    color: var(--text-primary) !important;
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-page); }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #555; }
+::-webkit-scrollbar-thumb:hover { background: var(--ind-orange); }
+
+/* ===== 深色主题 - 激进覆盖 Gradio 内部样式 ===== */
+[data-theme="dark"] .gradio-container,
+[data-theme="dark"] .app,
+[data-theme="dark"] .main,
+[data-theme="dark"] .contain { background: var(--bg-page) !important; }
+
+/* 所有容器和面板 */
+[data-theme="dark"] .block,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .gr-box,
+[data-theme="dark"] .gr-form {
+    --block-background-fill: var(--bg-card);
+    --block-border-color: var(--border-color);
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* 清除图片/快照组件的白色底 */
+[data-theme="dark"] gradio-app,
+[data-theme="dark"] .gr-image,
+[data-theme="dark"] .image-container,
+[data-theme="dark"] [class*="image"],
+[data-theme="dark"] .empty,
+[data-theme="dark"] .gr-panel,
+[data-theme="dark"] [class*="upload"],
+[data-theme="dark"] .upload-area {
+    background: var(--bg-page) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-muted) !important;
+}
+
+/* Radio 按钮白底专项 */
+[data-theme="dark"] label[class*="svelte-"],
+[data-theme="dark"] .gr-radio label,
+[data-theme="dark"] .radio-item,
+[data-theme="dark"] .radio-label {
+    background: transparent !important;
+    color: var(--text-primary) !important;
+}
+[data-theme="dark"] .gr-image img,
+[data-theme="dark"] img[class*="empty"],
+[data-theme="dark"] .image-frame img {
+    background: var(--bg-input) !important;
+}
+
+/* Tab 面板区域 */
+[data-theme="dark"] .tabitem,
+[data-theme="dark"] .tabs > div,
+[data-theme="dark"] .tabpanel,
+[data-theme="dark"] .tab-panel { background: var(--bg-page) !important; }
+
+/* 强制所有文字变亮 (排除卡片数字、Logo、LED) */
+[data-theme="dark"] p:not(.card-big-num),
+[data-theme="dark"] span:not(.card-dot):not(.led-dot),
+[data-theme="dark"] div:not(.logo-hex):not(.card-big-num):not(.logo-title):not(.logo-info):not(.logo-sub),
+[data-theme="dark"] label, [data-theme="dark"] legend,
+[data-theme="dark"] li, [data-theme="dark"] td, [data-theme="dark"] th,
+[data-theme="dark"] .label-text, [data-theme="dark"] .label,
+[data-theme="dark"] .gr-markdown, [data-theme="dark"] .markdown * {
+    color: var(--text-primary) !important;
+}
+
+/* 辅助文字 */
+[data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .secondary-text, [data-theme="dark"] .meta-text,
+[data-theme="dark"] .gr-info-text, [data-theme="dark"] .info-text { color: var(--text-secondary) !important; }
+
+/* 输入框、文本域、下拉 */
+[data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select,
+[data-theme="dark"] .gr-textbox input, [data-theme="dark"] .gr-textbox textarea,
+[data-theme="dark"] .gr-number input, [data-theme="dark"] .gr-dropdown select,
+[data-theme="dark"] .dropdown-arrow, [data-theme="dark"] .options-container,
+[data-theme="dark"] .gr-radio, [data-theme="dark"] .gr-checkbox,
+[data-theme="dark"] .wrap, [data-theme="dark"] .wrap-inner,
+[data-theme="dark"] [class*="input"], [data-theme="dark"] [class*="textbox"] {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Radio / Checkbox 专项 */
+[data-theme="dark"] .radio-item, [data-theme="dark"] .checkbox-item,
+[data-theme="dark"] .gr-radio label, [data-theme="dark"] .gr-checkbox label,
+[data-theme="dark"] .radio-label, [data-theme="dark"] .checkbox-label {
+    background: transparent !important;
+    color: var(--text-primary) !important;
+}
+[data-theme="dark"] fieldset, [data-theme="dark"] .gr-group,
+[data-theme="dark"] .gr-fieldset, [data-theme="dark"] .form-group {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Dropdown 选项 */
+[data-theme="dark"] .options-dropdown, [data-theme="dark"] .dropdown-options,
+[data-theme="dark"] option, [data-theme="dark"] .gr-dropdown option {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+}
+
+/* 表格 */
+[data-theme="dark"] table, [data-theme="dark"] .dataframe,
+[data-theme="dark"] .gr-dataframe, [data-theme="dark"] .table-wrap {
+    background: var(--bg-table) !important;
+}
+[data-theme="dark"] td, [data-theme="dark"] .dataframe td { color: var(--text-primary) !important; }
+[data-theme="dark"] tr:nth-child(even) td, [data-theme="dark"] .even td { background: var(--bg-hover) !important; }
+
+/* Accordion / 折叠 */
+[data-theme="dark"] .accordion, [data-theme="dark"] .gr-accordion,
+[data-theme="dark"] details, [data-theme="dark"] summary {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* 按钮 secondary 深色模式 */
+[data-theme="dark"] button.secondary,
+[data-theme="dark"] button[variant="secondary"],
+[data-theme="dark"] .gr-button-secondary,
+[data-theme="dark"] .secondary button {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* 所有 svelte 生成元素 (保留特殊元素) */
+[data-theme="dark"] [class*="svelte-"]:not(.card-big-num):not(.card-dot):not(.led-dot) {
+    color: var(--text-primary) !important;
+}
+[data-theme="dark"] [class*="svelte-"] input,
+[data-theme="dark"] [class*="svelte-"] textarea,
+[data-theme="dark"] [class*="svelte-"] select {
+    background: var(--bg-input) !important;
+}
+
+/* 清除白色背景 */
+[data-theme="dark"] [style*="background"],
+[data-theme="dark"] [style*="background-color"] {
+    /* not overriding inline styles */
+}
+[data-theme="dark"] [style*="background: rgb(255, 255, 255)"],
+[data-theme="dark"] [style*="background: #fff"],
+[data-theme="dark"] [style*="background: #ffffff"],
+[data-theme="dark"] [style*="background:white"],
+[data-theme="dark"] [style*="background: rgb(248"] {
+    background: var(--bg-card) !important;
+}
+
+/* Slider 专项 */
+[data-theme="dark"] .gr-slider input[type="range"] { background: var(--bg-input) !important; }
+[data-theme="dark"] .gr-slider .value { color: var(--text-primary) !important; }
+
+/* Blockquote */
+[data-theme="dark"] blockquote {
+    background: var(--bg-hover) !important;
+    color: var(--text-secondary) !important;
+    border-left-color: var(--ind-orange) !important;
+}

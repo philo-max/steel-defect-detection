@@ -1,0 +1,14 @@
+# NEU-DET 钢铁表面缺陷数据集
+path: F:/gangtiebiaomianquexian/steel-defect-detection/data/datasets/neu_det
+train: images/train
+val: images/val
+test: images/test
+
+nc: 6
+names:
+  - crazing
+  - inclusion
+  - patches
+  - pitted_surface
+  - rolled-in_scale
+  - scratches

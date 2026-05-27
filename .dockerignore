@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+data/images/
+data/exports/
+data/inspection.db
+logs/
+*.pt
+.env
+*.bak
