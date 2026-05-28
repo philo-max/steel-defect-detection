@@ -1,6 +1,6 @@
 # 运维文档
 
-> 钢铁表面缺陷检测系统 V2.0 | 2026-05-27
+> 钢铁表面缺陷检测系统 V2.1 | 2026-05-27
 
 ## 部署
 
@@ -139,12 +139,18 @@ python scripts/benchmark.py --model models/weights/steel_defect.pt
 
 ### 备份命令
 
-```bash
-# 手动备份
-copy models\weights\steel_defect.pt D:\backup\steel_defect_20260527.pt
+**Windows:**
 
-# 数据库备份
+```powershell
+copy models\weights\steel_defect.pt D:\backup\steel_defect_20260527.pt
 copy data\inspection.db D:\backup\inspection_20260527.db
+```
+
+**Linux:**
+
+```bash
+cp models/weights/steel_defect.pt /backup/steel_defect_20260527.pt
+cp data/inspection.db /backup/inspection_20260527.db
 ```
 
 ## 故障处理

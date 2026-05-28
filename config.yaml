@@ -132,7 +132,9 @@ monitor:
   enabled: true              # 是否启用监控
   check_interval: 60         # 健康检查间隔(秒)
   
-  # 告警规则
+  # 告警规则 (支持两种格式)
+  #   数字: gpu_memory: 90                      → warning=90, critical 自动=99
+  #   字典: gpu_memory: {warning: 90, critical: 95}  → 独立设置
   alert_rules:
     # GPU告警
     gpu_memory: 90           # GPU内存使用率阈值(%)

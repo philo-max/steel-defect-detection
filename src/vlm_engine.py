@@ -13,6 +13,7 @@ import base64
 from io import BytesIO
 
 import numpy as np
+import cv2
 from PIL import Image
 from openai import OpenAI
 
@@ -56,7 +57,12 @@ def _detect_provider(api_base: Optional[str] = None) -> tuple[str, str, str, str
 
 
 class VLMDetector(BaseDetector):
-    """视觉大模型缺陷检测器 (多提供商)"""
+    """视觉大模型缺陷检测器 (多提供商)
+    
+    注意: SYSTEM_PROMPT 约 3KB (~750 tokens)，每次 API 调用都会发送。
+    按 Gemini Flash 定价 (~$0.075/1M input tokens)，单次调用 prompt 成本约 $0.00006。
+    高频场景建议配合 FastScreener 预筛选减少 VLM 调用次数。
+    """
 
     # 优化后的钢铁缺陷检测提示词 (高灵敏度版 v2)
     SYSTEM_PROMPT = """你是钢铁表面缺陷检测 AI，任务是在钢板图像中精确定位并描述所有可见缺陷。
@@ -197,8 +203,6 @@ bbox_description 必须包含位置和形态：
 
     def _enhance_for_defects(self, image: np.ndarray) -> np.ndarray:
         """图像预处理：CLAHE 自适应直方图均衡化 + 锐化，增强缺陷可见性"""
-        import cv2
-
         # 转灰度做 CLAHE 增强
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))

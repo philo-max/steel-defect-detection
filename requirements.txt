@@ -10,7 +10,6 @@ ultralytics>=8.0.0
 
 # --- 计算机视觉 ---
 opencv-python>=4.8.0
-opencv-python-headless>=4.8.0
 Pillow>=10.0.0
 
 # --- Web 工作台 ---

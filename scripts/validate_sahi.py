@@ -33,6 +33,7 @@ def main():
         overlap_ratio=0.2,
         verbose=False,
     )
+    sahi._model_loaded = True  # 手动注入已加载的底层模型
 
     # 加载验证集
     val_dir = Path("data/datasets/neu_det/images/val")
@@ -49,6 +50,7 @@ def main():
     yolo_by_class = {c: 0 for c in class_names}
     sahi_by_class = {c: 0 for c in class_names}
     total_gt = {c: 0 for c in class_names}
+    sahi_triggered = False
 
     for img_path in images:
         img = cv2.imread(str(img_path))
@@ -63,18 +65,28 @@ def main():
 
         # SAHI 检测（仅大图 > 1000px 才启用）
         if max(w, h) > 1000:
+            sahi_triggered = True
             result = sahi.detect(img)
             for d in result.detections:
                 if d.confidence > 0.05:
                     sahi_total += 1
-                    sahi_by_class[d.class_name] = sahi_by_class.get(d.class_name, 0) + 1
+                    if d.class_name in sahi_by_class:
+                        sahi_by_class[d.class_name] += 1
+                    else:
+                        print(f"[WARN] SAHI 返回未知类别: {d.class_name}")
 
         # YOLO 直接检测（对照组）
         result = detector.detect(img)
         for d in result.detections:
             if d.confidence > 0.05:
                 yolo_total += 1
-                yolo_by_class[d.class_name] = yolo_by_class.get(d.class_name, 0) + 1
+                if d.class_name in yolo_by_class:
+                    yolo_by_class[d.class_name] += 1
+                else:
+                    print(f"[WARN] YOLO 返回未知类别: {d.class_name}")
+
+    if not sahi_triggered:
+        print("[INFO] 所有图像均小于 1000px，SAHI 滑窗未触发（NEU-DET 小图不适用 SAHI）\n")
 
     print(f"\n{'类别':20s} {'GT':>5s} {'YOLO':>5s} {'SAHI':>5s} {'提升':>6s}")
     print("-" * 50)

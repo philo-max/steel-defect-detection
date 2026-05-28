@@ -109,7 +109,8 @@ class EmailNotification(NotificationChannel):
         self.smtp_host = config.get("smtp_host") or config.get("smtp_server", "")
         self.smtp_port = config.get("smtp_port", 465)
         self.sender = config.get("sender") or config.get("username", "")
-        self.password = config.get("password", "")
+        # 优先从环境变量读取密码，回退到配置文件
+        self.password = os.environ.get("SMTP_PASSWORD") or config.get("password", "")
         self.receivers = config.get("receivers", [])
         self.use_ssl = config.get("use_ssl", True)
 
@@ -126,8 +127,10 @@ class EmailNotification(NotificationChannel):
             msg = MIMEText(
                 f"告警级别: {alert.level.value}\n"
                 f"告警时间: {alert.timestamp}\n"
-                f"告警消息: {alert.message}\n"
-                f"指标详情: {json.dumps(alert.metrics, ensure_ascii=False, default=str)}",
+                f"规则名称: {alert.rule_name}\n"
+                f"监控指标: {alert.metric_key}\n"
+                f"当前值: {alert.current_value} (阈值: {alert.threshold})\n"
+                f"告警消息: {alert.message}",
                 "plain", "utf-8",
             )
             msg["Subject"] = f"{prefix} 钢铁缺陷检测系统告警"
@@ -288,7 +291,12 @@ class AlertEngine:
         self._load_notifications(notifications)
     
     def _load_rules(self, rules_config: Dict[str, Any]) -> None:
-        """加载告警规则"""
+        """加载告警规则
+        
+        支持两种配置格式:
+        - 数字: gpu_memory: 90          → warning=90, critical=99 (1.1x)
+        - 字典: gpu_memory: {warning: 90, critical: 95}  → 独立设置
+        """
         rule_definitions = [
             ("gpu_memory", "gpu.memory_usage", 90, 95, "gt", "GPU内存使用率过高"),
             ("gpu_temperature", "gpu.temperature", 85, 90, "gt", "GPU温度过高"),
@@ -303,11 +311,15 @@ class AlertEngine:
         ]
         
         for name, metric_key, warn_thresh, crit_thresh, comp, desc in rule_definitions:
-            # 从配置中读取自定义阈值（如果存在）
             config_value = rules_config.get(name)
-            if isinstance(config_value, (int, float)):
+            if isinstance(config_value, dict):
+                # 新格式: {warning: X, critical: Y}
+                warn_thresh = config_value.get("warning", warn_thresh)
+                crit_thresh = config_value.get("critical", crit_thresh)
+            elif isinstance(config_value, (int, float)):
+                # 旧格式: 数字 → 严重阈值 = 警告 × 1.1
                 warn_thresh = config_value
-                crit_thresh = config_value * 1.1  # 严重阈值比警告高10%
+                crit_thresh = config_value * 1.1
             
             self.add_rule(AlertRule(
                 name=name,

@@ -23,6 +23,7 @@
 """
 
 import time
+import threading
 from typing import Tuple
 
 import cv2
@@ -59,6 +60,7 @@ class FastScreener:
         self._score_history: list[float] = []  # 最近 100 帧的分数
         self._max_history: int = 100
         self._adaptive_enabled: bool = True
+        self._history_lock = threading.Lock()   # 保护 _score_history 线程安全
 
     # ==================== 主入口 ====================
 
@@ -93,15 +95,19 @@ class FastScreener:
         combo = 0.35 * fft_score + 0.30 * std_score + 0.35 * edge_score
 
         # 自适应阈值更新
-        self._score_history.append(combo)
-        if len(self._score_history) > self._max_history:
-            self._score_history.pop(0)
+        with self._history_lock:
+            self._score_history.append(combo)
+            if len(self._score_history) > self._max_history:
+                self._score_history.pop(0)
 
         # 动态阈值
-        if self._adaptive_enabled and len(self._score_history) >= 30:
-            dynamic_thresh = self._compute_dynamic_threshold()
-        else:
-            dynamic_thresh = self.combo_threshold
+        if self._adaptive_enabled:
+            with self._history_lock:
+                hist_len = len(self._score_history)
+            if hist_len >= 30:
+                dynamic_thresh = self._compute_dynamic_threshold()
+            else:
+                dynamic_thresh = self.combo_threshold
 
         is_anomaly = combo > dynamic_thresh
 

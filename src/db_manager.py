@@ -9,7 +9,7 @@ import shutil
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from datetime import datetime
 from typing import Optional
 from contextlib import contextmanager
@@ -279,7 +279,12 @@ class DBManager:
     # ==================== 工具方法 ====================
 
     def _row_to_record(self, row) -> InspectionRecord:
-        return InspectionRecord(**dict(row))
+        """将数据库行转换为 InspectionRecord，自动过滤无效字段"""
+        row_dict = dict(row)
+        # 只保留 InspectionRecord 定义的字段，忽略数据库中多余的列
+        valid_fields = {f.name for f in fields(InspectionRecord)}
+        filtered = {k: v for k, v in row_dict.items() if k in valid_fields}
+        return InspectionRecord(**filtered)
 
     def close(self) -> None:
         if hasattr(self._local, "conn") and self._local.conn:

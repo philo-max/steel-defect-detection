@@ -71,8 +71,11 @@ def _lazy_import_vlm():
 def _lazy_import_rag():
     global rag_analyze
     if rag_analyze is None:
-        from scripts.rag_demo import rag_analyze as _rag
-        rag_analyze = _rag
+        try:
+            from scripts.rag_demo import rag_analyze as _rag  # pyright: ignore[reportMissingImports]
+            rag_analyze = _rag
+        except ImportError:
+            return None
     return rag_analyze
 
 
@@ -743,9 +746,8 @@ def rag_root_cause_analysis(defect_info_json: str = "") -> str:
         return """<div style="padding:16px;text-align:center;color:#999">
             未检测到缺陷，无需根因分析</div>"""
 
-    try:
-        _rag = _lazy_import_rag()
-    except ImportError:
+    _rag = _lazy_import_rag()
+    if _rag is None:
         return """<div style="padding:16px;color:#E53E3E">
             RAG 模块未就绪，请确保 scripts/rag_demo.py 存在</div>"""
 
@@ -1026,6 +1028,23 @@ def _start_mjpeg_server(monitor=None):
 
 
 # ==================== 启动 ====================
+
+def _get_auth_credentials():
+    """从环境变量读取 Gradio 登录凭证。
+    
+    设置 GRADIO_USERNAME 和 GRADIO_PASSWORD 环境变量启用认证。
+    未设置则无认证（向后兼容）。
+    
+    示例 .env:
+        GRADIO_USERNAME=admin
+        GRADIO_PASSWORD=steel2026
+    """
+    username = os.environ.get("GRADIO_USERNAME", "")
+    password = os.environ.get("GRADIO_PASSWORD", "")
+    if username and password:
+        return [(username, password)]
+    return None
+
 
 def launch(config_path: str = "config.yaml", monitor=None):
     """启动 Gradio 工作台
@@ -1625,6 +1644,7 @@ def launch(config_path: str = "config.yaml", monitor=None):
         share=False,
         show_error=True,
         css=load_css(),
+        auth=_get_auth_credentials(),
     )
 
 
