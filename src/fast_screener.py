@@ -100,14 +100,15 @@ class FastScreener:
             if len(self._score_history) > self._max_history:
                 self._score_history.pop(0)
 
-        # 动态阈值
+        # 动态阈值（锁内计算，避免 _compute_dynamic_threshold 读取 _score_history 时竞态）
         if self._adaptive_enabled:
             with self._history_lock:
-                hist_len = len(self._score_history)
-            if hist_len >= 30:
-                dynamic_thresh = self._compute_dynamic_threshold()
-            else:
-                dynamic_thresh = self.combo_threshold
+                if len(self._score_history) >= 30:
+                    dynamic_thresh = self._compute_dynamic_threshold()
+                else:
+                    dynamic_thresh = self.combo_threshold
+        else:
+            dynamic_thresh = self.combo_threshold
 
         is_anomaly = combo > dynamic_thresh
 

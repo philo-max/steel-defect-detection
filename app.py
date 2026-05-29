@@ -1037,7 +1037,7 @@ def _get_auth_credentials():
     
     示例 .env:
         GRADIO_USERNAME=admin
-        GRADIO_PASSWORD=steel2026
+        GRADIO_PASSWORD=your_password_here
     """
     username = os.environ.get("GRADIO_USERNAME", "")
     password = os.environ.get("GRADIO_PASSWORD", "")
