@@ -1,9 +1,9 @@
-# 钢铁表面缺陷检测系统 V2.1
+# 钢铁表面缺陷检测系统 V2.2.2
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.12-red)](https://pytorch.org)
 [![YOLO](https://img.shields.io/badge/YOLO-v8s-orange)](https://ultralytics.com)
-[![Tests](https://img.shields.io/badge/tests-106%20passed-green)](tests/)
+[![Tests](https://img.shields.io/badge/tests-113%20passed-green)](tests/)
 [![mAP50](https://img.shields.io/badge/mAP50-0.906-brightgreen)](runs/train/)
 
 基于 **YOLOv8s + VLM + RAG 三引擎架构** 的工业级钢铁表面缺陷智能检测平台。
@@ -15,8 +15,8 @@
 | 检测模型 | YOLOv8s (11M 参数) |
 | mAP50 | **0.906** (NEU-DET) |
 | 推理延迟 | P50=46ms, ~143 FPS |
-| 支持缺陷 | 6 类 (裂纹/夹杂/斑块/麻点/氧化皮/划痕) |
-| 测试覆盖 | 106 passed, 0 failed |
+| 支持缺陷 | 6+ 类 (裂纹/夹杂/斑块/麻点/氧化皮/划痕/锈蚀/气泡) |
+| 测试覆盖 | 113 passed, 0 failed |
 
 ## 快速开始
 
@@ -29,14 +29,17 @@ python app.py      # 启动工作台 → http://127.0.0.1:7860
 
 ## 功能特性
 
-- ⚡ **YOLO 筛查** — mAP50=0.906, 7ms推理
-- 🧠 **VLM 复核** — Gemini/Qwen 自动探测
-- 📚 **RAG 根因** — 缺陷→原因→工艺建议
-- 🎤 **语音控制** — 20+ 条语音指令
-- 🎨 **工业UI** — 深浅双主题, 钢铁之眼Logo
-- 📦 **多格式导出** — CSV / Bad Case / HTML
-- 📊 **系统监控** — GPU/CPU/相机健康检查
-- 🐳 **Docker** — 容器化部署支持
+- ⚡ **YOLO 筛查** — mAP50=0.906, 7ms推理，全速多线程运行
+- 🔄 **异步流水线** — YOLO 全速推理与后台 VLM/RAG 异步会诊，彻底消除端到端时延 Gap
+- ⚙️ **数字孪生 UI** — 3D 虚拟传送带跑马灯与智能决策会诊中枢实时 Yield 流式反馈
+- 🧠 **VLM 复核** — Gemini/Qwen 自动探测，实现少样本精细诊断与严重度分级
+- 📚 **RAG 根因** — GB/T 1499.2 / 3280 权威国标注入，双路 Online/Offline 容错检索
+- 🎤 **语音控制** — 20+ 条语音导航与审核指令
+- 🎨 **工业 UI** — 工业级深浅双主题, 钢铁之眼 Logo
+- 📦 **多格式导出** — CSV / Bad Case 数据集 / 完整 HTML 质检报告
+- 📊 **系统监控** — GPU/CPU/相机及 API 状态健康度实时检查
+- 🐳 **Docker** — 容器化部署与 watchdog 服务支持
+
 
 ## 文档
 
@@ -273,6 +276,13 @@ steel-defect-detection/
 详细故障排除请参考 `docs/user-manual.md`。
 
 ## 更新日志
+
+### v2.2.2 (2026-06-01)
+
+- 🔄 **异步非阻塞检测流水线**：解耦 YOLO 推理与慢速 VLM/RAG 流程，引入后台 `Queue` 任务队列与守护 Worker，彻底消除端到端时延 Gap，支持全速实时质检。
+- ⚙️ **数字孪生虚拟流水线看板**：在 UI 顶部集成 3D 质感 Conveyor Belt 传送履带，伴随滚轮旋转、异常呼吸闪烁、会诊扫描等高端纯 CSS 视效，并通过 Generator Yield 实现流式视觉反馈。
+- 📚 **工业级“双路容错”RAG 根因分析**：在 SQLite 数据库中构建知识库并注入 `GB/T 1499.2`、`GB/T 3280`、`GB/T 228.1` 等权威钢铁生产规范；支持 Online 向量比对与 100% Offline 本地模糊检索，彻底防范 API 欠费/断连带来的业务停摆风险。
+- 🧪 **自动化测试与环境隔离**：新增 RAG 和数字孪生单元测试，隔离了 VLM 环境检测，新增 12 个测试点，113 项全量测试 100% 通过。
 
 ### v2.1.0 (2026-05-27)
 
