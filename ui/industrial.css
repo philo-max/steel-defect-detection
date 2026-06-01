@@ -449,3 +449,254 @@ blockquote {
     color: var(--text-secondary) !important;
     border-left-color: var(--ind-orange) !important;
 }
+
+/* ===== 钢铁表面缺陷检测系统 V2.2.2 - 数字孪生虚拟流水线 CSS 增强 ===== */
+
+/* 传送带面板 */
+.conveyor-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    width: 100%;
+}
+
+/* 看板标题及指标 */
+.conveyor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 6px;
+}
+.conveyor-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--ind-orange);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.conveyor-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.conveyor-stat-badge {
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+/* 传送履带主体 */
+.steel-conveyor-belt {
+    background: linear-gradient(180deg, #18181b 0%, #27272a 50%, #18181b 100%);
+    border-radius: 8px;
+    padding: 14px 18px;
+    position: relative;
+    box-shadow: inset 0 4px 12px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 16px;
+    min-height: 112px;
+    margin-bottom: 8px;
+}
+/* 解决滚动条样式 */
+.steel-conveyor-belt::-webkit-scrollbar {
+    height: 4px;
+}
+.steel-conveyor-belt::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 2px;
+}
+
+/* 旋转滚轮 */
+.conveyor-rollers {
+    position: absolute;
+    bottom: 2px;
+    left: 10px;
+    right: 10px;
+    height: 8px;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+    opacity: 0.7;
+}
+.conveyor-roller {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(from 0deg, #6b7280 0deg 30deg, #374151 30deg 60deg);
+    animation: roller-spin 1.5s linear infinite;
+}
+@keyframes roller-spin {
+    100% { transform: rotate(360deg); }
+}
+
+/* 扫描流中的钢片卡片 */
+.conveyor-sheet {
+    flex-shrink: 0;
+    width: 142px;
+    background: #e2e8f0;
+    border-radius: 6px;
+    border: 2px solid #cbd5e1;
+    padding: 6px 10px;
+    color: #0f172a;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+[data-theme="dark"] .conveyor-sheet {
+    background: #334155;
+    border-color: #475569;
+    color: #f1f5f9;
+}
+
+/* 正常通行卡片 (PASS) */
+.conveyor-sheet.pass {
+    border-color: #2a9d8f;
+    box-shadow: 0 4px 10px rgba(42,157,143,0.2);
+    background: linear-gradient(135deg, #f0fdf4, #e8f5e9);
+}
+[data-theme="dark"] .conveyor-sheet.pass {
+    background: linear-gradient(135deg, #064e3b, #022c22);
+}
+
+/* 缺陷检测警报卡片 (ALERT) */
+.conveyor-sheet.defect {
+    border-color: #e63946;
+    animation: sheet-alarm-pulse 1.5s infinite;
+    background: linear-gradient(135deg, #fef2f2, #ffebee);
+}
+[data-theme="dark"] .conveyor-sheet.defect {
+    background: linear-gradient(135deg, #7f1d1d, #450a0a);
+}
+
+/* 专家会诊/检索中 (ANALYZING) */
+.conveyor-sheet.analyzing {
+    border-color: #ff6b35;
+    background: linear-gradient(135deg, #fffbeb, #fff8e1);
+}
+[data-theme="dark"] .conveyor-sheet.analyzing {
+    background: linear-gradient(135deg, #78350f, #451a03);
+}
+.conveyor-sheet.analyzing::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 200%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,107,53,0.35), transparent);
+    animation: sheet-scan 1.5s infinite;
+}
+
+/* 卡片内部结构 */
+.conveyor-sheet-id {
+    font-size: 10px;
+    font-weight: 700;
+    opacity: 0.65;
+    margin-bottom: 2px;
+    font-family: monospace;
+}
+.conveyor-sheet-status {
+    font-size: 11px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.conveyor-sheet-details {
+    font-size: 10px;
+    opacity: 0.85;
+    line-height: 1.3;
+}
+
+/* 动效动画 */
+@keyframes sheet-alarm-pulse {
+    0%, 100% {
+        box-shadow: 0 4px 8px rgba(230,57,70,0.25), 0 0 4px rgba(230,57,70,0.1);
+    }
+    50% {
+        box-shadow: 0 4px 16px rgba(230,57,70,0.6), 0 0 12px rgba(230,57,70,0.3);
+        border-color: #ff4d5a;
+    }
+}
+@keyframes sheet-scan {
+    0% { left: -150%; }
+    100% { left: 150%; }
+}
+
+/* 智能会诊决策中枢看板 */
+.decision-hub {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 8px;
+    position: relative;
+}
+.decision-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    transition: all 0.3s;
+}
+.decision-node.active {
+    color: var(--ind-orange);
+}
+.decision-node-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+}
+.decision-node.active .decision-node-icon {
+    border-color: var(--ind-orange);
+    box-shadow: 0 0 10px rgba(255,107,53,0.35);
+    background: rgba(255,107,53,0.08);
+}
+.decision-node.completed .decision-node-icon {
+    border-color: var(--safe-green);
+    color: var(--safe-green) !important;
+    box-shadow: 0 0 10px rgba(42,157,143,0.35);
+    background: rgba(42,157,143,0.08);
+}
+.decision-connector {
+    flex: 1;
+    height: 2px;
+    background: var(--border-color);
+    margin: 0 6px;
+    position: relative;
+    overflow: hidden;
+}
+.decision-connector.active::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, var(--ind-orange), transparent);
+    animation: flow-run 1s infinite linear;
+}
+@keyframes flow-run {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+

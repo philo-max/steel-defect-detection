@@ -22,6 +22,7 @@ class TestVLMDetectorInit:
         detector = VLMDetector(system_prompt=custom)
         assert detector._system_prompt == custom
 
+    @patch.dict("os.environ", {}, clear=True)
     def test_provider_detection_no_keys(self):
         from src.vlm_engine import VLMDetector
         detector = VLMDetector()

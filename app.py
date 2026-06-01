@@ -9,6 +9,8 @@ Gradio Web 工作台 - 钢铁表面缺陷检测系统。
 
 import json
 import os
+import queue
+import threading
 import time
 from collections.abc import Iterable
 from datetime import datetime
@@ -95,6 +97,21 @@ class AppState:
         self.last_result: dict = {}
         self.plc_trigger: Any | None = None      # PLC触发控制器
         self._screener_stats: dict = {"filtered": 0, "passed": 0}  # 筛查统计
+        
+        # 数字孪生传送带状态
+        self.conveyor_history = [
+            {"id": "Plate-101", "status": "pass", "details": "质检合格", "time": "09:40:12"},
+            {"id": "Plate-102", "status": "pass", "details": "质检合格", "time": "09:41:05"},
+            {"id": "Plate-103", "status": "pass", "details": "质检合格", "time": "09:43:24"},
+            {"id": "Plate-104", "status": "pass", "details": "质检合格", "time": "09:45:00"},
+        ]
+        self.conveyor_counter = 104
+        
+        # 异步非阻塞后台工作队列
+        self.defect_task_queue = queue.Queue(maxsize=100)
+        self.worker_running = True
+        self.vlm_rag_worker_thread = threading.Thread(target=self.vlm_rag_worker, daemon=True)
+        self.vlm_rag_worker_thread.start()
 
     def init_from_config(self, config_path: str):
         with open(config_path, encoding="utf-8") as f:
@@ -200,6 +217,126 @@ class AppState:
                 print("[WARN] openai 未安装，VLM 检测不可用。请运行: pip install openai")
                 self.vlm = None
 
+    def add_conveyor_sheet(self, status: str, details: str) -> str:
+        self.conveyor_counter += 1
+        sheet_id = f"Plate-{self.conveyor_counter:03d}"
+        time_str = datetime.now().strftime("%H:%M:%S")
+        self.conveyor_history.append({
+            "id": sheet_id,
+            "status": status,  # "pass" | "defect" | "analyzing"
+            "details": details,
+            "time": time_str
+        })
+        if len(self.conveyor_history) > 8:
+            self.conveyor_history.pop(0)
+        return sheet_id
+
+    def vlm_rag_worker(self):
+        """异步 VLM + RAG 后台会诊处理循环"""
+        while self.worker_running:
+            try:
+                # 获取待处理的异步会诊任务
+                task = self.defect_task_queue.get(timeout=1.0)
+            except Exception:
+                continue
+
+            try:
+                img = task["image"]
+                rid = task["record_id"]
+                detections = task["detections"]
+                sheet_id = task["sheet_id"]
+
+                # 1. 将传送带状态更新为“analyzing”（会诊中）
+                for item in self.conveyor_history:
+                    if item["id"] == sheet_id:
+                        item["status"] = "analyzing"
+                        item["details"] = "VLM大模型与国标库联合会诊中..."
+                        break
+
+                # 2. 调用 VLM 进行复核
+                vlm_detections = []
+                vlm_raw = {}
+                if self.vlm is not None:
+                    try:
+                        vlm_res = self.vlm.detect(img)
+                        vlm_detections = vlm_res.detections
+                        vlm_raw = vlm_res.raw_output or {}
+                    except Exception as e:
+                        print(f"[WARN] Async worker VLM call failed: {e}")
+
+                # 3. 运行 RAG 根因与标准比对
+                from scripts.rag_demo import rag_analyze
+                reports = []
+                
+                # 如果 VLM 检出缺陷，优先以 VLM 结果比对
+                eval_detections = vlm_detections if vlm_detections else detections
+                if eval_detections:
+                    for i, det in enumerate(eval_detections):
+                        cn = det.class_name if hasattr(det, 'class_name') else det.get("class_name", "?")
+                        desc = ""
+                        vlm_raw_response = vlm_raw.get("vlm_raw_response", {})
+                        if isinstance(vlm_raw_response.get("detections"), list) and i < len(vlm_raw_response["detections"]):
+                            desc = vlm_raw_response["detections"][i].get("bbox_description", "")
+                        
+                        report = rag_analyze(cn, desc)
+                        reports.append(report)
+                else:
+                    # 如果双引擎均未见明显缺陷
+                    reports.append("<div style='color:#38A169'>全引擎比对合格，无需根因处理。</div>")
+
+                combined_report = "\n\n---\n\n".join(reports)
+
+                # 4. 更新 SQLite 中的 InspectionRecord
+                if self.db is not None:
+                    try:
+                        final_result = {
+                            "detections": [d.to_dict() if hasattr(d, 'to_dict') else d for d in eval_detections],
+                            "vlm_raw_response": vlm_raw
+                        }
+                        
+                        # 更新数据库字段
+                        with self.db._get_conn() as conn:
+                            vlm_data = {"detections": [d.to_dict() if hasattr(d, 'to_dict') else d for d in vlm_detections], "raw_output": vlm_raw}
+                            
+                            conn.execute(
+                                """UPDATE inspection_records
+                                   SET vlm_result = ?,
+                                       final_result = ?,
+                                       note = ?,
+                                       review_status = 'pending'
+                                   WHERE id = ?""",
+                                (
+                                    json.dumps(vlm_data, ensure_ascii=False),
+                                    json.dumps(final_result, ensure_ascii=False),
+                                    combined_report,
+                                    rid
+                                )
+                            )
+                            conn.commit()
+                    except Exception as e:
+                        print(f"[ERROR] Async worker db update error: {e}")
+
+                # 5. 更新传送带状态为“defect”（有缺陷）或“pass”（合格）
+                defect_types_set = set()
+                for d in eval_detections:
+                    cn = d.class_name if hasattr(d, 'class_name') else d.get("class_name", "?")
+                    defect_types_set.add(DEFECT_INFO.get(cn.lower(), {}).get("cn", cn))
+                
+                for item in self.conveyor_history:
+                    if item["id"] == sheet_id:
+                        if defect_types_set:
+                            item["status"] = "defect"
+                            item["details"] = f"会诊完成 | 缺陷: {', '.join(defect_types_set)}"
+                        else:
+                            item["status"] = "pass"
+                            item["details"] = "合格通过"
+                        break
+
+            except Exception as e:
+                print(f"[ERROR] Async Worker error in main loop: {e}")
+            finally:
+                self.defect_task_queue.task_done()
+
     def _init_yolo_pytorch(self, yolo_cfg: dict):
         """初始化 PyTorch YOLO 检测器（回退方案）"""
         try:
@@ -270,6 +407,84 @@ DEFECT_INFO = {
     "blister":          {"bgr": (0, 255, 255),      "hex": "#319795", "cn": "气泡",       "icon": "○"},
 }
 DEFAULT_INFO =         {"bgr": (0, 200, 0),     "hex": "#38A169", "cn": "未知",   "icon": "?"}
+
+
+def render_conveyor_belt(active_stage: str = "done") -> str:
+    """渲染数字孪生虚拟传送带 HTML
+    
+    active_stage: "yolo" | "vlm" | "rag" | "done"
+    """
+    sheets_html = ""
+    for item in state.conveyor_history:
+        status_class = item["status"]
+        status_cn = "合格 PASS" if status_class == "pass" else "🚨 发现缺陷" if status_class == "defect" else "⚙️ 专家会诊"
+        sheet_color = "#38A169" if status_class == "pass" else "#e63946" if status_class == "defect" else "#ff6b35"
+        
+        sheets_html += f"""
+        <div class="conveyor-sheet {status_class}">
+            <div class="conveyor-sheet-id">🆔 {item['id']}</div>
+            <div class="conveyor-sheet-status" style="color: {sheet_color}">{status_cn}</div>
+            <div class="conveyor-sheet-details">
+                ⏱️ {item['time']}<br>
+                💬 {item['details']}
+            </div>
+        </div>
+        """
+        
+    # 生成 12 个滚轮点
+    rollers_html = "".join('<div class="conveyor-roller"></div>' for _ in range(12))
+    
+    # 状态映射
+    yolo_status = "completed" if active_stage in ["vlm", "rag", "done"] else "active" if active_stage == "yolo" else ""
+    vlm_status = "completed" if active_stage in ["rag", "done"] else "active" if active_stage == "vlm" else ""
+    rag_status = "completed" if active_stage == "done" else "active" if active_stage == "rag" else ""
+    
+    yolo_conn = "active" if active_stage in ["vlm", "rag", "done"] else ""
+    vlm_conn = "active" if active_stage in ["rag", "done"] else ""
+    
+    queue_len = state.defect_task_queue.qsize() if hasattr(state, "defect_task_queue") else 0
+    
+    html = f"""
+    <div class="conveyor-panel">
+        <div class="conveyor-header">
+            <div class="conveyor-title">
+                ⚙️ 虚拟带钢生产传送线 (Digital Twin Conveyor Belt)
+            </div>
+            <div class="conveyor-stats">
+                <span class="conveyor-stat-badge">🚗 运行速度: 2.8 m/s</span>
+                <span class="conveyor-stat-badge">📦 当前钢卷: Coil-#2026-A</span>
+                <span class="conveyor-stat-badge">⏳ 待会诊排队: {queue_len} 帧</span>
+            </div>
+        </div>
+        
+        <!-- 传送履带主体 -->
+        <div class="steel-conveyor-belt">
+            {sheets_html}
+            <div class="conveyor-rollers">
+                {rollers_html}
+            </div>
+        </div>
+        
+        <!-- 智能决策会诊中枢 -->
+        <div class="decision-hub">
+            <div class="decision-node {yolo_status}">
+                <div class="decision-node-icon">⚡</div>
+                <span>YOLO 快速筛查 (7ms)</span>
+            </div>
+            <div class="decision-connector {yolo_conn}"></div>
+            <div class="decision-node {vlm_status}">
+                <div class="decision-node-icon">🧠</div>
+                <span>VLM 专家会诊 (3s)</span>
+            </div>
+            <div class="decision-connector {vlm_conn}"></div>
+            <div class="decision-node {rag_status}">
+                <div class="decision-node-icon">📚</div>
+                <span>RAG 国标比对 (1s)</span>
+            </div>
+        </div>
+    </div>
+    """
+    return html
 
 
 def _get_defect_info(class_name: str) -> dict:
@@ -545,7 +760,7 @@ def _draw_detections(image: np.ndarray, detections: list, prefix: str = "") -> n
     return annotated
 
 
-def detect_image(image: np.ndarray, conf: float | None = None) -> tuple[np.ndarray, str]:
+def detect_image(image: np.ndarray, conf: float | None = None, add_to_conveyor: bool = True) -> tuple[np.ndarray, str]:
     """两阶段检测：FastScreener 预筛 → YOLO/SAHI 精准检测"""
     if image is None:
         return None, "<div style='color:#888;text-align:center;padding:20px'>请上传图像</div>"
@@ -572,6 +787,8 @@ def detect_image(image: np.ndarray, conf: float | None = None) -> tuple[np.ndarr
                     异常分数 {score:.3f} &lt; 阈值 · 跳过 YOLO 推理 · 已过滤 {state._screener_stats['filtered']} 帧
                 </div>
             </div>"""
+            if add_to_conveyor:
+                state.add_conveyor_sheet("pass", "筛查通过 (异常分数低)")
             return image, html
         state._screener_stats["passed"] += 1
 
@@ -588,6 +805,14 @@ def detect_image(image: np.ndarray, conf: float | None = None) -> tuple[np.ndarr
 
     annotated = _draw_detections(image, result.detections)
     html = _build_result_html(result.detections, engine_label, result.inference_time_ms, image=image)
+
+    if add_to_conveyor:
+        has_defect = len(result.detections) > 0
+        if has_defect:
+            defect_names = ", ".join(set(DEFECT_INFO.get(d.class_name.lower(), {}).get("cn", d.class_name) for d in result.detections))
+            state.add_conveyor_sheet("defect", f"YOLO检出: {defect_names}")
+        else:
+            state.add_conveyor_sheet("pass", "YOLO筛查通过")
 
     return annotated, html
 
@@ -674,7 +899,7 @@ def _draw_vlm_annotations(image: np.ndarray, vlm_raw: dict) -> np.ndarray:
     return annotated
 
 
-def vlm_analyze_image(image: np.ndarray) -> tuple[np.ndarray, str]:
+def vlm_analyze_image(image: np.ndarray, add_to_conveyor: bool = True) -> tuple[np.ndarray, str]:
     """VLM (Gemini) 精细缺陷分析"""
     if image is None:
         return None, "<div style='color:#888;text-align:center;padding:20px'>请先上传图像</div>"
@@ -724,6 +949,14 @@ def vlm_analyze_image(image: np.ndarray) -> tuple[np.ndarray, str]:
         result.inference_time_ms, result.raw_output,
         image=image
     )
+
+    if add_to_conveyor:
+        has_defect = len(result.detections) > 0
+        if has_defect:
+            defect_names = ", ".join(set(DEFECT_INFO.get(d.class_name.lower(), {}).get("cn", d.class_name) for d in result.detections))
+            state.add_conveyor_sheet("defect", f"VLM检出: {defect_names}")
+        else:
+            state.add_conveyor_sheet("pass", "VLM复核通过")
 
     return annotated, html
 
@@ -1312,6 +1545,9 @@ def launch(config_path: str = "config.yaml", monitor=None):
 
             # ===== 实时检测 =====
             with gr.TabItem("🔍 实时检测"):
+                # 数字孪生虚拟流水线跑马灯看板
+                conveyor_html = gr.HTML(value=render_conveyor_belt("done"))
+
                 with gr.Row(equal_height=True):
                     # 左栏：输入区
                     with gr.Column(scale=4):
@@ -1369,13 +1605,21 @@ def launch(config_path: str = "config.yaml", monitor=None):
                     save_msg = gr.Textbox(label="保存状态", interactive=False, show_label=False)
 
                 # ---- 事件绑定 ----
+                def handle_yolo(img, conf):
+                    annotated, html = detect_image(img, conf, add_to_conveyor=True)
+                    return annotated, html, render_conveyor_belt("done")
+                    
+                def handle_vlm(img):
+                    annotated, html = vlm_analyze_image(img, add_to_conveyor=True)
+                    return annotated, html, render_conveyor_belt("done")
+
                 yolo_btn.click(
-                    fn=detect_image, inputs=[input_img, conf_slider],
-                    outputs=[output_img, result_md],
+                    fn=handle_yolo, inputs=[input_img, conf_slider],
+                    outputs=[output_img, result_md, conveyor_html],
                 )
                 vlm_btn.click(
-                    fn=vlm_analyze_image, inputs=[input_img],
-                    outputs=[output_img, result_md],
+                    fn=handle_vlm, inputs=[input_img],
+                    outputs=[output_img, result_md, conveyor_html],
                 )
                 rag_btn.click(fn=rag_root_cause_analysis, inputs=[], outputs=[rag_html])
                 rag_clr.click(fn=lambda: "", inputs=[], outputs=[rag_html])
@@ -1386,9 +1630,10 @@ def launch(config_path: str = "config.yaml", monitor=None):
                 )
 
                 def full_pipeline(img, conf, progress=gr.Progress()):
-                    """一键全流程：YOLO 筛查 → VLM 复核 → RAG 根因，各阶段独立容错"""
+                    """一键全流程：YOLO 筛查 → VLM 复核 → RAG 根因，各阶段独立容错 (Generator Yield 版)"""
                     if img is None:
-                        return None, "## ⚠️ 请先上传钢板表面图像", ""
+                        yield img, "## ⚠️ 请先上传钢板表面图像", "", render_conveyor_belt("done")
+                        return
 
                     t0 = time.time()
                     stages = []  # [(label, ok, icon, detail)]
@@ -1397,28 +1642,88 @@ def launch(config_path: str = "config.yaml", monitor=None):
 
                     # ============ 阶段 1/3：YOLO 快速筛查 ============
                     progress(0.0, desc="阶段 1/3: YOLO 快速筛查中...")
+                    
+                    # 1.1 在传送带中新增一块“会诊中”的板材
+                    sheet_id = state.add_conveyor_sheet("analyzing", "YOLO正在检测表面缺陷...")
+                    yield output_image, "### ⚡ 正在执行 YOLO 快速筛查...", "", render_conveyor_belt("yolo")
+                    
                     try:
-                        yolo_img, yolo_md = detect_image(img, conf)
+                        yolo_img, yolo_md = detect_image(img, conf, add_to_conveyor=False)
                         output_image = yolo_img
-                        stages.append(("YOLO 快速筛查", True, "⚡", yolo_md))
+                        has_defect = len(state.last_result.get("detections", [])) > 0
+                        
+                        if has_defect:
+                            # 更新传送带详情
+                            for item in state.conveyor_history:
+                                if item["id"] == sheet_id:
+                                    item["details"] = f"YOLO检出 {len(state.last_result['detections'])} 处疑似缺陷，移交专家复核..."
+                                    break
+                            stages.append(("YOLO 快速筛查", True, "⚡", yolo_md))
+                        else:
+                            for item in state.conveyor_history:
+                                if item["id"] == sheet_id:
+                                    item["status"] = "pass"
+                                    item["details"] = "YOLO筛查通过，未发现缺陷"
+                                    break
+                            stages.append(("YOLO 快速筛查", True, "⚡", yolo_md))
+                            
+                        # 第一次 Yield
+                        yield output_image, f"## ⚡ YOLO 筛查完成 ✓\n\n{yolo_md}", "", render_conveyor_belt("yolo")
                     except Exception as e:
                         stages.append(("YOLO 快速筛查", False, "⚡",
                                        f"<span style='color:#E53E3E'>检测异常: {str(e)[:120]}</span>"))
+                        yield output_image, f"## ❌ YOLO 筛查异常\n\n{str(e)}", "", render_conveyor_belt("done")
+                        return
+
+                    # 如果没有缺陷，直接结束，省去后续 VLM 耗时！
+                    if not has_defect:
+                        total_elapsed = (time.time() - t0) * 1000
+                        summary = f"""## 📊 综合检测报告
+                        
+| 状态 | 总耗时 | 阶段数 | 通过 |
+|------|--------|--------|------|
+| <span style='color:#38A169;font-weight:800'>未检出缺陷 - 合格通过</span> | {total_elapsed:.0f} ms | 1 | 1/1 |
+
+### ⚡ ✅ YOLO 快速筛查
+未发现异常纹理，产品表面质量合格。已直接通行。"""
+                        yield output_image, summary, "", render_conveyor_belt("done")
+                        return
 
                     # ============ 阶段 2/3：VLM 精细复核 ============
                     progress(0.33, desc="阶段 2/3: VLM 精细分析中...")
+                    for item in state.conveyor_history:
+                        if item["id"] == sheet_id:
+                            item["details"] = "VLM大模型复核，类型甄别与严重度评估中..."
+                            break
+                    yield output_image, "### 🧠 YOLO已定位疑似病灶，正在启动云端大模型 VLM 精细会诊...", "", render_conveyor_belt("vlm")
+                    
+                    vlm_detections = []
+                    vlm_md = ""
                     try:
-                        vlm_img, vlm_md = vlm_analyze_image(img)
+                        vlm_img, vlm_md = vlm_analyze_image(img, add_to_conveyor=False)
                         output_image = vlm_img  # VLM 标注覆盖 YOLO 标注
-                        # 区分正常失败和 API 配额耗尽
                         vlm_ok = "缺陷" in vlm_md or "正常" in vlm_md or "无缺陷" in vlm_md or "检测结果" in vlm_md
                         stages.append(("VLM 精细分析", vlm_ok, "🧠", vlm_md))
+                        
+                        # 判定 VLM 是否真检出了缺陷
+                        vlm_data = state.last_result.get("vlm_result", {})
+                        vlm_detections = vlm_data.get("detections", [])
+                        
+                        # 第二次 Yield
+                        yield output_image, f"## 🧠 VLM 复核完成 ✓\n\n{vlm_md}", "", render_conveyor_belt("vlm")
                     except Exception as e:
                         stages.append(("VLM 精细分析", False, "🧠",
                                        f"<span style='color:#E53E3E'>VLM 调用失败: {str(e)[:120]}</span>"))
+                        yield output_image, f"## ❌ VLM 复核异常\n\n{str(e)}", "", render_conveyor_belt("done")
 
                     # ============ 阶段 3/3：RAG 根因分析 ============
                     progress(0.66, desc="阶段 3/3: 生成根因分析报告...")
+                    for item in state.conveyor_history:
+                        if item["id"] == sheet_id:
+                            item["details"] = "对照国家标准规范（GB/T）根因分析与纠偏中..."
+                            break
+                    yield output_image, "### 📚 正在检索国家钢铁生产规范知识库 (RAG)...", "", render_conveyor_belt("rag")
+                    
                     try:
                         rag_report = rag_root_cause_analysis()
                         rag_ok = "未检测到缺陷" not in rag_report and "请先执行" not in rag_report
@@ -1431,6 +1736,20 @@ def launch(config_path: str = "config.yaml", monitor=None):
 
                     progress(1.0, desc="全流程完成 ✓")
                     total_elapsed = (time.time() - t0) * 1000
+
+                    # ============ 更新传送带卡片为最终缺陷状态 ============
+                    defect_types_set = set()
+                    eval_detections = vlm_detections if vlm_detections else state.last_result.get("detections", [])
+                    for d in eval_detections:
+                        cn = d.class_name if hasattr(d, 'class_name') else d.get("class_name", "?")
+                        defect_types_set.add(DEFECT_INFO.get(cn.lower(), {}).get("cn", cn))
+                        
+                    defect_desc = ", ".join(defect_types_set)
+                    for item in state.conveyor_history:
+                        if item["id"] == sheet_id:
+                            item["status"] = "defect" if defect_types_set else "pass"
+                            item["details"] = f"会诊完成 | 缺陷: {defect_desc}" if defect_types_set else "合格通过"
+                            break
 
                     # ============ 组装综合报告 ============
                     stage_count = len(stages)
@@ -1454,12 +1773,12 @@ def launch(config_path: str = "config.yaml", monitor=None):
                         lines.append("")
 
                     summary = "\n".join(lines)
-                    return output_image, summary, rag_report
+                    yield output_image, summary, rag_report, render_conveyor_belt("done")
 
                 full_btn.click(
                     fn=full_pipeline,
                     inputs=[input_img, conf_slider],
-                    outputs=[output_img, result_md, rag_html],
+                    outputs=[output_img, result_md, rag_html, conveyor_html],
                 )
 
             # ===== 人工审核 =====
