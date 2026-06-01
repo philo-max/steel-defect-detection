@@ -42,3 +42,11 @@ tmp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Vue 3 Subproject
+steel-defect-detection-vue/node_modules/
+steel-defect-detection-vue/dist/
+
+# C++ Subproject
+steel-defect-detection-cpp/build/
+steel-defect-detection-cpp/bin/

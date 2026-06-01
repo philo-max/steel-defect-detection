@@ -1,0 +1,70 @@
+@import 'element-plus/dist/index.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global resets for Industrial dashboard */
+body {
+  margin: 0;
+  background-color: #090d16;
+  color: #e2e8f0;
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f293d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2b6cb0;
+}
+
+/* Glassmorphism panel styling */
+.industrial-panel {
+  background: rgba(19, 25, 36, 0.75);
+  backdrop-filter: blur(10px);
+  border: 1px solid #1f293d;
+  border-radius: 12px;
+}
+
+/* Subtle laser scanning line animation */
+@keyframes laser-scan {
+  0% { top: 0%; opacity: 0.8; }
+  50% { opacity: 0.3; }
+  100% { top: 100%; opacity: 0.8; }
+}
+
+.laser-scanner {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ef4444, transparent);
+  box-shadow: 0 0 10px #ef4444;
+  animation: laser-scan 3s infinite linear;
+}
+
+/* Smooth status pulse */
+@keyframes pulse-glow {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 15px currentColor; }
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.status-indicator.active {
+  animation: pulse-glow 2s infinite ease-in-out;
+}
