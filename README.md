@@ -1,4 +1,4 @@
-# 钢铁表面缺陷检测系统 V3.0 (C++ + Vue 3)
+# 钢铁表面缺陷检测系统 V3.1 (C++ + Vue 3)
 
 [![C++](https://img.shields.io/badge/C%2B%2B-17-blue)](https://en.cppreference.com/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-brightgreen)](https://vuejs.org/)
@@ -149,7 +149,13 @@ cmake --build . --config Release
 
 ## 📝 更新日志
 
-### v3.0.0 (2026-06-01) - 当前版本
+### v3.1.0 (2026-06-03) - 当前版本
+- 🔍 **前处理抗光照干扰 (CLAHE)**：在 YOLO 推理前可选引入自适应直方图均衡化（CLAHE），拉伸局部对比度，有效克服工业现场光照不均，增强低召回缺陷的边缘特征。
+- 📈 **小样本与难检类别增强**：升级了 `scripts/augment_defects.py` 数据增强工具，针对低召回率类别 `inclusion` (夹杂) 和 `rolled-in_scale` (轧制氧化皮) 自动叠加亮度抖动与 CLAHE 增强进行数据增广，提高缺陷样本的多样性。
+- ⚡ **连接高可用与自适应重连**：Vue 3 前端引入了指数退避自动重连机制（间隔 1s, 2s, 4s, 8s... 最多 10 次）和 5 秒心跳机制（ping/pong），实现了网线瞬断自动重连且页面不卡顿，并辅以三态呼吸灯展示。
+- 🛠️ **一键式运维诊断扩展**：升级了 `cli.py` 环境验证工具，支持自动加载 `.env`，新增对 VLM API 节点网络连接平均时延（Round-Trip Time）的自动测算，并在时延过大时给出预警，辅助工业部署决策。
+
+### v3.0.0 (2026-06-01)
 - 🚀 **C++ 推理与 API 重构**：完成了基于 **ONNX Runtime C++ API** 的极速预处理与 NMS C++ 算法，引入 C 风格 `sqlite3` 精准 RAG 国家标准模糊匹配，并采用 Drogon 高性能服务器广播 WebSocket。
 - 🎨 **Vue 3 响应式数字孪生大屏**：全面重写前端代码。利用 SVG + `requestAnimationFrame` 开发出流动式传送带物理模型，集成 YOLO 标记 Canvas 自适应框线、ECharts 看板、硬件 CPU/GPU 状态监控灯。
 - 🔗 **Python 兼容微服务网关**：新撰写了 `scripts/vue_api_bridge.py` 算法服务，利用已有的 Python 环境无缝兼容 V3.0 API，为用户提供零开销联机演示。
