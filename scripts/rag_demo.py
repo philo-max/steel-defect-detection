@@ -31,7 +31,7 @@ DEFECT_MAP = {
 def _get_api_client() -> tuple[Optional[OpenAI], str]:
     """探测 API 客户端与模型"""
     # 尝试读取环境变量
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("VLM_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
+    api_key = os.getenv("VLM_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
     if not api_key:
         return None, ""
         

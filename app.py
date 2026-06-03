@@ -201,7 +201,7 @@ class AppState:
             except Exception as e:
                 print(f"[WARN] FastScreener 初始化失败: {e}")
 
-        # ===== VLM (可选，自动检测 Gemini/Qwen) =====
+        # ===== VLM (可选，自动检测 n1n/Gemini/Qwen) =====
         vlm_cfg = self.config.get("vlm", {})
         if vlm_cfg.get("enabled", True):
             try:
@@ -253,12 +253,23 @@ class AppState:
                         item["details"] = "VLM大模型与国标库联合会诊中..."
                         break
 
-                # 2. 调用 VLM 进行复核
+                # 2. 调用 VLM 进行复核 (附带 YOLO 先验引导线索以确保召回率)
                 vlm_detections = []
                 vlm_raw = {}
                 if self.vlm is not None:
                     try:
-                        vlm_res = self.vlm.detect(img)
+                        yolo_hints = []
+                        if detections:
+                            for det in detections:
+                                cn = det.class_name if hasattr(det, 'class_name') else det.get("class_name", "?")
+                                conf = det.confidence if hasattr(det, 'confidence') else det.get("confidence", 0.0)
+                                bbox = det.bbox if hasattr(det, 'bbox') else det.get("box", [0, 0, 0, 0])
+                                yolo_hints.append({
+                                    "class_name": cn,
+                                    "confidence": conf,
+                                    "bbox": bbox
+                                })
+                        vlm_res = self.vlm.detect(img, yolo_hints=yolo_hints)
                         vlm_detections = vlm_res.detections
                         vlm_raw = vlm_res.raw_output or {}
                     except Exception as e:
@@ -268,8 +279,9 @@ class AppState:
                 from scripts.rag_demo import rag_analyze
                 reports = []
                 
-                # 如果 VLM 检出缺陷，优先以 VLM 结果比对
-                eval_detections = vlm_detections if vlm_detections else detections
+                # YOLO-Authoritative Strategy: YOLO remains the absolute authority for defect classification and localization.
+                # VLM and RAG are utilized solely for expert physical root-cause reasoning and GB/T process compliance.
+                eval_detections = detections
                 if eval_detections:
                     for i, det in enumerate(eval_detections):
                         cn = det.class_name if hasattr(det, 'class_name') else det.get("class_name", "?")
@@ -313,6 +325,13 @@ class AppState:
                                 )
                             )
                             conn.commit()
+                            
+                            # Real-time sync update notification to FastAPI bridge
+                            try:
+                                import requests
+                                requests.post(f"http://localhost:8080/api/sync_record?id={rid}", timeout=1.0)
+                            except Exception as sync_err:
+                                print(f"[WARN] Sync bridge notification failed: {sync_err}")
                     except Exception as e:
                         print(f"[ERROR] Async worker db update error: {e}")
 
@@ -900,7 +919,7 @@ def _draw_vlm_annotations(image: np.ndarray, vlm_raw: dict) -> np.ndarray:
 
 
 def vlm_analyze_image(image: np.ndarray, add_to_conveyor: bool = True) -> tuple[np.ndarray, str]:
-    """VLM (Gemini) 精细缺陷分析"""
+    """VLM (n1n.ai) 精细缺陷分析"""
     if image is None:
         return None, "<div style='color:#888;text-align:center;padding:20px'>请先上传图像</div>"
 
@@ -908,7 +927,21 @@ def vlm_analyze_image(image: np.ndarray, add_to_conveyor: bool = True) -> tuple[
         return image, "<div style='color:#E53E3E;text-align:center;padding:20px'>VLM 引擎未启用</div>"
 
     state.current_image = image
-    result = state.vlm.detect(image)
+    
+    # 提取 YOLO 检测特征作为引导 hints 传给 VLM，结合其图像特征，防止小目标漏检
+    yolo_hints = []
+    if state.last_result and "detections" in state.last_result:
+        for d in state.last_result["detections"]:
+            cn = d.get("class_name", "?")
+            conf = d.get("confidence", 0.0)
+            bbox = d.get("bbox", [0, 0, 0, 0])
+            yolo_hints.append({
+                "class_name": cn,
+                "confidence": conf,
+                "bbox": bbox
+            })
+            
+    result = state.vlm.detect(image, yolo_hints=yolo_hints)
 
     vlm_data = result.to_dict()
     if state.last_result:
@@ -921,10 +954,10 @@ def vlm_analyze_image(image: np.ndarray, add_to_conveyor: bool = True) -> tuple[
         err = result.error
         if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
             msg = (
-                "## ⚠️ Gemini API 配额已用完\n\n"
-                "今天的免费请求次数已达到上限（20次/天）。\n\n"
+                "## ⚠️ n1n.ai VLM API 配额已用完\n\n"
+                "今天的请求次数已达到上限。\n\n"
                 "**解决方案:**\n"
-                "- 等待明天配额重置\n"
+                "- 等待额度重置或充值\n"
                 "- 或使用 **YOLO 快速筛查** 代替（无需 API）\n"
                 "- 或更换 API Key\n\n"
                 "> YOLO 检测仍可正常使用"
@@ -932,7 +965,7 @@ def vlm_analyze_image(image: np.ndarray, add_to_conveyor: bool = True) -> tuple[
         elif "timeout" in err.lower():
             msg = (
                 "## ⏱️ VLM 请求超时\n\n"
-                "Gemini API 响应超时，请稍后重试。\n\n"
+                "n1n.ai VLM API 响应超时，请稍后重试。\n\n"
                 "可以先使用 **YOLO 快速筛查**"
             )
         else:
@@ -1032,6 +1065,16 @@ def save_and_record(reviewer: str, note: str) -> str:
     )
 
     rid = state.db.insert(record)
+    
+    # Real-time sync update notification in a background thread to prevent UI blocking
+    def notify_sync():
+        try:
+            import requests
+            requests.post(f"http://localhost:8080/api/sync_record?id={rid}", timeout=1.0)
+        except Exception:
+            pass
+    threading.Thread(target=notify_sync, daemon=True).start()
+
     return f"已保存 (ID: {rid}) | 缺陷类型: {defect_types or '无'}"
 
 
@@ -1328,7 +1371,7 @@ def launch(config_path: str = "config.yaml", monitor=None):
 
     status_badges = f"""
     <span style="background:rgba(255,255,255,0.18);padding:5px 14px;border-radius:20px;font-size:12px">
-        {ICON_VLM} VLM: gemini-3.1-flash</span>
+        {ICON_VLM} VLM: qwen3-vl-plus</span>
     <span style="background:rgba(255,255,255,0.18);padding:5px 14px;border-radius:20px;font-size:12px">
         {ICON_GPU} {'GPU 加速' if gpu_ok else 'CPU 模式'}</span>
     <span style="background:rgba(255,255,255,0.18);padding:5px 14px;border-radius:20px;font-size:12px">
@@ -1360,8 +1403,8 @@ def launch(config_path: str = "config.yaml", monitor=None):
                         <span>{'GPU 加速' if gpu_ok else 'CPU 模式'}</span>
                     </div>
                     <div class="status-led-group">
-                        <div class="led-dot led-orange"></div>
-                        <span>VLM: gemini-3.1-flash</span>
+                        <div class="led-dot led-green"></div>
+                        <span>VLM: qwen3-vl-plus</span>
                     </div>
                     <div class="status-led-group">
                         <div class="led-dot led-green"></div>
@@ -1555,7 +1598,7 @@ def launch(config_path: str = "config.yaml", monitor=None):
                             label="上传钢板表面图像",
                             type="numpy",
                             height=420,
-                            sources=["upload", "clipboard"],
+                            sources=["upload", "webcam", "clipboard"],
                         )
                         with gr.Row():
                             conf_slider = gr.Slider(

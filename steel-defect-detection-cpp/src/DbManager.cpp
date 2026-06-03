@@ -22,8 +22,18 @@ bool DbManager::init(const std::string& db_path) {
 
     // Enable high performance WAL mode
     char* zErrMsg = nullptr;
-    sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, &zErrMsg);
-    sqlite3_exec(db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, &zErrMsg);
+    int exec_rc = sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, &zErrMsg);
+    if (exec_rc != SQLITE_OK) {
+        std::cerr << "[DbManager] WARNING: Failed to set WAL mode: " << (zErrMsg ? zErrMsg : "Unknown error") << std::endl;
+        if (zErrMsg) sqlite3_free(zErrMsg);
+        zErrMsg = nullptr;
+    }
+    exec_rc = sqlite3_exec(db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, &zErrMsg);
+    if (exec_rc != SQLITE_OK) {
+        std::cerr << "[DbManager] WARNING: Failed to set synchronous mode: " << (zErrMsg ? zErrMsg : "Unknown error") << std::endl;
+        if (zErrMsg) sqlite3_free(zErrMsg);
+        zErrMsg = nullptr;
+    }
     
     // Set 5 seconds busy timeout
     sqlite3_busy_timeout(db_, 5000);

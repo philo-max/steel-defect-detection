@@ -101,15 +101,21 @@ const conveyorItems = computed(() => store.conveyorItems);
 // Smooth ticking frame update for moving sheets
 let animationId = 0;
 const updatePositions = () => {
-  conveyorItems.value.forEach(item => {
-    // 0.2% movement per frame (~12% per second)
-    if (item.position < 82) {
-      item.position += 0.15;
+  let hasRolledOff = false;
+  
+  store.conveyorItems.forEach(item => {
+    // 0.25% movement per frame (~15% per second) to look active
+    if (item.position < 100) {
+      item.position += 0.25;
     } else {
-      // Reached near the end, hold position or slow down to exit
-      item.position += 0.05;
+      hasRolledOff = true;
     }
   });
+
+  // Dynamically remove sheets that roll off the screen to prevent piles at the right edge
+  if (hasRolledOff) {
+    store.conveyorItems = store.conveyorItems.filter(item => item.position < 100);
+  }
 
   animationId = requestAnimationFrame(updatePositions);
 };

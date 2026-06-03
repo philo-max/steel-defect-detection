@@ -48,10 +48,12 @@ def test_query_knowledge_base_fuzzy():
 
 def test_rag_analyze_offline_fallback():
     """验证 RAG 在离线（或 API 未加载）时的模板拼接生成结果"""
-    report = rag_analyze("scratches", "连续的划伤")
-    
-    assert "scratches" in report or "划痕" in report
-    assert "GB/T 3280" in report
-    assert "📑 工业标准比对报告" in report
-    assert "🔬 物理根因分析" in report
-    assert "🛠️ 车间工艺纠偏动作" in report
+    from unittest.mock import patch
+    with patch.dict(os.environ, {"VLM_API_KEY": "", "GEMINI_API_KEY": "", "DASHSCOPE_API_KEY": ""}):
+        report = rag_analyze("scratches", "连续的划伤")
+        
+        assert "scratches" in report or "划痕" in report
+        assert "GB/T 3280" in report
+        assert "📑 工业标准比对报告" in report
+        assert "🔬 物理根因分析" in report
+        assert "🛠️ 车间工艺纠偏动作" in report

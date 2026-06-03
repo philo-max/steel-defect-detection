@@ -16,7 +16,7 @@ struct Detection {
 class YoloDetector {
 public:
     YoloDetector();
-    ~YoloDetector() = default;
+    ~YoloDetector();
 
     bool init(const std::string& model_path, bool use_gpu = true);
     

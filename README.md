@@ -7,6 +7,8 @@
 [![YOLO](https://img.shields.io/badge/YOLO-v8-orange)](https://ultralytics.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+## 📝 项目概述
+
 基于 **高性能 C++ 边缘推理 (Drogon/ONNX) + Vue 3 现代化数字孪生中控大屏** 的工业级钢铁表面缺陷智能质检平台。
 
 ---
@@ -18,13 +20,13 @@
 | **端到端推理时延** | ~46 ms (P50 延迟，受限 Python GIL) | **< 2.0 ms** (C++ 预处理 + ONNX Runtime) | 时延缩减 **95.6%**，完美支持高倍率线阵在线检测。 |
 | **系统最大吞吐** | ~143 FPS | **> 500 FPS** (在 RTX 5060 上) | 支持在 10m/s 的高速带钢流水线上实现毫秒级零丢帧扫描。 |
 | **控制流管道设计** | 单线程同步阻塞，慢速 RAG 检索会导致主检测流停顿 | **多线程异步消费流水线** (Camera -> Ring Buffer -> Inference -> SQLite -> WS Broadcast) | 大模型会诊与 RAG 完全异步，全时段质检检测绝不卡顿。 |
-| **前端视觉体验** | 粗糙的 HTML 跑马灯拼贴，缺少响应式布局 | **SVG 动态数字孪生传送带**，提供深色 HSL 科技感看板 | 带来震撼的数字化孪生沉浸感，摆脱 Gradio 模板感。 |
+| **前端视觉体验** | 粗糙的 HTML 跑马灯拼贴，缺少响应式布局 | **SVG 动态数字孪生传送带**，提供深色 HSL 科技感看板 | 带来震撼 of 数字化孪生沉浸感，摆脱 Gradio 模板感。 |
 
 ---
 
-## 🏗️ 总体系统架构
+## 🏗️ 技术架构
 
-系统采用工业前后端分离微服务设计：
+系统采用工业前后端分离微服务技术架构设计：
 * **前端展示层 (Vue 3 + Vite + TypeScript)**：连接后端的 WebSocket 广播管道，实时同步检测帧、YOLO 缺陷坐标、ECharts 走势图并呈现高逼真的钢板传送 Marquee。
 * **边缘检测端 (C++ Drogon + ONNX Runtime)**：硬实时核心。拉取线阵相机流，执行图像预处理、YOLOv8 推理和 NMS (非极大值抑制)，并通过 WAL 高性能模式持久化至 SQLite。
 * **智慧决策端 (Python FastAPI + Gemini VLM + RAG)**：算法微服务大脑。调取本地 RAG 标准库检索国家 GB/T 标准规范（如 `GB/T 3280-2015`），通过 Gemini 视觉模型异步生成权威成因分析与工艺整改建议。
@@ -110,7 +112,23 @@ cmake --build . --config Release
 ./steel_defect_detection_cpp
 ```
 
+### 方案 D：最初版纯 Python 极速部署运行 (Gradio 界面)
+
+如果您希望省去 Node.js (Vue) 安装以及 C++ drogons/onnxruntime 环境编译配置，直接在单一 Python 进程内体验最初版 (Gradio 界面)，可以通过以下步骤极速部署与运行：
+
+1. **一键环境安装**：
+   * **Windows**：双击运行项目根目录下的 [setup.bat](file:///f:/gangtiebiaomianquexian/steel-defect-detection/setup.bat)
+   * **Linux / macOS**：在终端运行 `bash ` [setup.sh](file:///f:/gangtiebiaomianquexian/steel-defect-detection/setup.sh)
+2. **一键启动 Web 工作台**：
+   ```powershell
+   # 激活虚拟环境并启动主入口
+   .venv\Scripts\python main.py
+   ```
+3. **访问大屏**：
+   在浏览器中访问 [**`http://localhost:7860/`**](http://localhost:7860/)。该界面包含了实时检测（YOLO/VLM/RAG）、人工审核工作台与报表导出三大核心模块，即装即用。
+
 ---
+
 
 ## 🧠 双引擎 RAG 国家钢铁质量规范
 

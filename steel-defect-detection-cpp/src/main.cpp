@@ -5,10 +5,37 @@
 #include <vector>
 #include <chrono>
 #include <random>
+#include <sstream>
+#include <iomanip>
 #include "YoloDetector.hpp"
 #include "DbManager.hpp"
 
 using namespace drogon;
+
+// Helper to escape strings for secure JSON construction
+std::string escapeJsonString(const std::string& input) {
+    std::ostringstream ss;
+    for (char c : input) {
+        switch (c) {
+            case '\\': ss << "\\\\"; break;
+            case '"': ss << "\\\""; break;
+            case '/': ss << "\\/"; break;
+            case '\b': ss << "\\b"; break;
+            case '\f': ss << "\\f"; break;
+            case '\n': ss << "\\n"; break;
+            case '\r': ss << "\\r"; break;
+            case '\t': ss << "\\t"; break;
+            default:
+                if (c >= 0 && c < 32) {
+                    ss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+                } else {
+                    ss << c;
+                }
+                break;
+        }
+    }
+    return ss.str();
+}
 
 // Global state and thread safety
 std::mutex g_ws_mutex;
@@ -97,7 +124,7 @@ void cameraPipelineLoop() {
         for (size_t i = 0; i < results.size(); ++i) {
             const auto& d = results[i];
             yolo_json << (i > 0 ? "," : "")
-                      << "{\"type\":\"" << d.class_name << "\",\"cn\":\"" << d.cn_name 
+                      << "{\"type\":\"" << escapeJsonString(d.class_name) << "\",\"cn\":\"" << escapeJsonString(d.cn_name) 
                       << "\",\"confidence\":" << d.confidence 
                       << ",\"box\":[" << d.box.x << "," << d.box.y << "," << d.box.width << "," << d.box.height << "]}";
             
@@ -137,18 +164,18 @@ void cameraPipelineLoop() {
         std::stringstream ws_msg;
         ws_msg << "{\"type\":\"detection\",\"data\":{"
                << "\"id\":" << record.id << ","
-               << "\"timestamp\":\"" << record.timestamp << "\","
-               << "\"image_path\":\"" << record.image_path << "\","
-               << "\"result_path\":\"" << record.result_path << "\","
+               << "\"timestamp\":\"" << escapeJsonString(record.timestamp) << "\","
+               << "\"image_path\":\"" << escapeJsonString(record.image_path) << "\","
+               << "\"result_path\":\"" << escapeJsonString(record.result_path) << "\","
                << "\"yolo_result\":" << record.yolo_result << ","
                << "\"vlm_result\":" << record.vlm_result << ","
                << "\"final_result\":" << record.final_result << ","
-               << "\"defect_types\":\"" << record.defect_types << "\","
+               << "\"defect_types\":\"" << escapeJsonString(record.defect_types) << "\","
                << "\"defect_count\":" << record.defect_count << ","
                << "\"confidence\":" << record.confidence << ","
-               << "\"reviewer\":\"" << record.reviewer << "\","
-               << "\"review_status\":\"" << record.review_status << "\","
-               << "\"note\":\"" << record.note << "\""
+               << "\"reviewer\":\"" << escapeJsonString(record.reviewer) << "\","
+               << "\"review_status\":\"" << escapeJsonString(record.review_status) << "\","
+               << "\"note\":\"" << escapeJsonString(record.note) << "\""
                << "}}";
 
         broadcastMessage(ws_msg.str());

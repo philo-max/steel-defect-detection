@@ -127,27 +127,76 @@ export const useDefectStore = defineStore('defect', {
       };
     },
 
+    async fetchHistory() {
+      try {
+        const response = await fetch(`http://${window.location.hostname}:8080/api/records?limit=50`);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          this.records = data.map((record: any) => {
+            return {
+              ...record,
+              review_status: record.review_status || 'pending',
+              yolo_result: typeof record.yolo_result === 'string' ? JSON.parse(record.yolo_result) : (record.yolo_result || {}),
+              vlm_result: typeof record.vlm_result === 'string' ? JSON.parse(record.vlm_result) : (record.vlm_result || {}),
+              final_result: typeof record.final_result === 'string' ? JSON.parse(record.final_result) : (record.final_result || {}),
+            };
+          });
+          
+          // Auto select the first record if any and none is currently selected
+          if (this.records.length > 0 && !this.selectedRecord) {
+            this.selectedRecord = this.records[0];
+          }
+          console.log(`[Store] Loaded ${this.records.length} history records from database.`);
+        }
+      } catch (err) {
+        console.error('[Store] Failed to fetch history records:', err);
+      }
+    },
+
     addInspectionRecord(record: InspectionRecord) {
+      // Robustly parse JSON properties if they come in as stringified JSON from database updates
+      const formattedRecord: InspectionRecord = {
+        ...record,
+        review_status: record.review_status || 'pending',
+        yolo_result: typeof record.yolo_result === 'string' ? JSON.parse(record.yolo_result) : (record.yolo_result || {}),
+        vlm_result: typeof record.vlm_result === 'string' ? JSON.parse(record.vlm_result) : (record.vlm_result || {}),
+        final_result: typeof record.final_result === 'string' ? JSON.parse(record.final_result) : (record.final_result || {}),
+      };
+
+      // Check if record already exists
+      const existingIndex = this.records.findIndex(r => r.id === formattedRecord.id);
+      if (existingIndex !== -1) {
+        // Sync and update record in place
+        this.records[existingIndex] = { ...this.records[existingIndex], ...formattedRecord };
+        
+        // Update selected record in place if it matches
+        if (this.selectedRecord && this.selectedRecord.id === formattedRecord.id) {
+          this.selectedRecord = { ...this.records[existingIndex] };
+        }
+        console.log(`[Store] Updated existing record #${formattedRecord.id} in-place.`);
+        return;
+      }
+
       // Add to history records list
-      this.records.unshift(record);
+      this.records.unshift(formattedRecord);
       if (this.records.length > 50) {
         this.records.pop();
       }
 
       // Add to rolling conveyor belt
       const conveyorId = `sheet-${Date.now()}`;
-      const status = record.defect_count > 0 ? 'defect' : 'pass';
-      const details = record.defect_count > 0 
-        ? `⚠️ 检出缺陷: ${record.defect_types}`
+      const status = formattedRecord.defect_count > 0 ? 'defect' : 'pass';
+      const details = formattedRecord.defect_count > 0 
+        ? `⚠️ 检出缺陷: ${formattedRecord.defect_types}`
         : '✅ 钢板表面合格';
 
       this.conveyorItems.push({
         id: conveyorId,
         status,
-        time: new Date(record.timestamp || Date.now()).toLocaleTimeString(),
+        time: new Date(formattedRecord.timestamp || Date.now()).toLocaleTimeString(),
         details,
         position: 0,
-        recordId: record.id
+        recordId: formattedRecord.id
       });
 
       // Maintain conveyor items list length
@@ -157,7 +206,7 @@ export const useDefectStore = defineStore('defect', {
 
       // Automatically select if it is a defect to alert the operator
       if (status === 'defect') {
-        this.selectedRecord = record;
+        this.selectedRecord = formattedRecord;
       }
     },
 

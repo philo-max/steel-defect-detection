@@ -1,7 +1,7 @@
 """
 VLM 检测引擎 - 基于视觉大模型的钢铁表面缺陷精细分析。
 
-支持: Google Gemini (免费) / 阿里 Qwen-VL / 任意 OpenAI 兼容接口
+支持: 小米 Mimo (低成本全模态 mimo-v2.5) / Google Gemini (免费) / 阿里 Qwen-VL / 任意 OpenAI 兼容接口
 用于 YOLO 低置信度/未知类别的复核分析。
 """
 
@@ -21,6 +21,11 @@ from .base_detector import BaseDetector, InferenceResult, DetectionResult
 
 # 支持的 API 提供商配置
 _PROVIDERS = {
+    "mimo": {
+        "base_url": "https://api.xiaomimimo.com/v1",
+        "env_key": "VLM_API_KEY",
+        "default_model": "mimo-v2.5",
+    },
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "env_key": "GEMINI_API_KEY",
@@ -36,18 +41,18 @@ _PROVIDERS = {
 
 def _detect_provider(api_base: Optional[str] = None) -> tuple[str, str, str, str]:
     """自动检测可用的 VLM 提供商 -> (provider_name, api_key, base_url, model)"""
-    # 优先级1: VLM_API_KEY (自定义 OpenAI 兼容接口)
+    # 优先级1: VLM_API_KEY (自定义 OpenAI 兼容接口，若未指定 base_url 则默认使用小米 Mimo)
     vlm_key = os.getenv("VLM_API_KEY", "")
     if vlm_key:
-        vlm_base = os.getenv("VLM_BASE_URL", "")
-        vlm_model = os.getenv("VLM_MODEL", "gemini-2.5-flash")
-        return ("custom", vlm_key, vlm_base, vlm_model)
+        vlm_base = os.getenv("VLM_BASE_URL", "https://api.xiaomimimo.com/v1")
+        vlm_model = os.getenv("VLM_MODEL", "mimo-v2.5")
+        return ("mimo", vlm_key, vlm_base, vlm_model)
 
     if api_base:
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
         return ("custom", api_key, api_base, "gemini-2.5-flash")
 
-    # 优先级2: Gemini 免费
+    # 优先级2: Gemini 免费 / 阿里百炼
     for name, cfg in _PROVIDERS.items():
         key = os.getenv(cfg["env_key"], "")
         if key:
@@ -60,19 +65,21 @@ class VLMDetector(BaseDetector):
     """视觉大模型缺陷检测器 (多提供商)
     
     注意: SYSTEM_PROMPT 约 3KB (~750 tokens)，每次 API 调用都会发送。
-    按 Gemini Flash 定价 (~$0.075/1M input tokens)，单次调用 prompt 成本约 $0.00006。
+    按小米 Mimo 定价 (~0.05元/1M input tokens，已调价降幅达 99%)，单次调用 prompt 成本极低。
     高频场景建议配合 FastScreener 预筛选减少 VLM 调用次数。
     """
 
-    # 优化后的钢铁缺陷检测提示词 (高灵敏度版 v2)
+    # 优化后的钢铁缺陷检测提示词 (高灵敏度版 v3)
     SYSTEM_PROMPT = """你是钢铁表面缺陷检测 AI，任务是在钢板图像中精确定位并描述所有可见缺陷。
 
 ## 检测指令
 
-1. 扫描整张图像，视距覆盖全局和局部细节
-2. 钢板正常表面为均匀灰色金属纹理，任何偏离此特征的都是缺陷
-3. 特别关注：细线、斑块、色差、凹陷、凸起、反光异常
-4. 评估每个缺陷的严重程度: minor(轻微)、moderate(中等)、severe(严重)
+1. 扫描整张图像，视距覆盖全局和局部细节。
+2. 钢板正常表面为均匀灰色金属纹理，任何偏离此特征的异常都是缺陷。
+3. 特别关注：细线、斑块、色差、凹陷、凸起、反光异常。
+4. 评估每个缺陷的严重程度: minor(轻微)、moderate(中等)、severe(严重)。
+5. **宁可误报，不可漏报（高召回率优先）**：对于疑似缺陷的微弱异常信号，只要偏离正常纹理，均应进行标注并给予合理的置信度评价。
+6. **双图互证**：您将被同时提供两张相同位置的图，第一张是【原始图】，第二张是【对比度增强图】。请对比原始图与增强图。若增强图中显现出明显的局部黑点、线条或白斑，而在原始图中对应区域有色差或凹陷迹象，即使对比度微弱，也应判定为缺陷。
 
 ## 七类缺陷定义
 
@@ -140,8 +147,9 @@ bbox_description 必须包含位置和形态：
         if not self.api_key:
             raise ValueError(
                 "请设置 VLM API Key 环境变量:\n"
-                "  Gemini (免费): GEMINI_API_KEY\n"
-                "  阿里百炼:     DASHSCOPE_API_KEY"
+                "  小米 Mimo (成本低/高灵敏度): VLM_API_KEY\n"
+                "  Gemini (免费):               GEMINI_API_KEY\n"
+                "  阿里百炼:                   DASHSCOPE_API_KEY"
             )
 
         self._client = OpenAI(
@@ -153,19 +161,32 @@ bbox_description 必须包含位置和形态：
         print(f"[INFO] VLM 引擎就绪: {self._provider} / {self.model}")
         self._warm = True
 
-    def detect(self, image: np.ndarray) -> InferenceResult:
-        """对单张图像执行 VLM 检测 (含图像增强)"""
+    def detect(self, image: np.ndarray, yolo_hints: Optional[list] = None) -> InferenceResult:
+        """对单张图像执行 VLM 检测 (双图互证模式：原始图 + 增强图，支持 YOLO 坐标线索引导)"""
         if self._client is None:
             return InferenceResult(error="VLM 客户端未初始化，请先调用 load_model()")
 
         start = time.perf_counter()
 
         try:
-            # 图像预处理：增强对比度，让缺陷更明显
-            enhanced = self._enhance_for_defects(image)
-            img_base64 = self._image_to_base64(enhanced)
+            # 1. 编码原始图像
+            raw_base64 = self._image_to_base64(image)
 
-            # 使用 system prompt + user image
+            # 2. 图像预处理与编码：增强对比度，让边界和细小纹理缺陷更明显
+            enhanced = self._enhance_for_defects(image)
+            enhanced_base64 = self._image_to_base64(enhanced)
+
+            # 3. 编译提示词文本并加入 YOLO 指导线索
+            prompt_text = "请仔细对比上述两张图（第一张是原始图像，第二张是自适应增强与锐化处理后的图像），精确检查钢板表面是否存在任何裂纹、划痕、氧化皮、压痕、气泡、锈蚀或斑块等缺陷。请注意：宁可误报，不可漏报！"
+            
+            if yolo_hints:
+                hints_str = "\n".join([
+                    f"- YOLO 在该区域检测到疑似【{h['class_name']}】缺陷（置信度: {h['confidence']*100:.0f}%），大致坐标范围为: x={h['bbox'][0]}, y={h['bbox'][1]}, 宽={h['bbox'][2]}, 高={h['bbox'][3]}。"
+                    for h in yolo_hints
+                ])
+                prompt_text += f"\n\n**重要辅助参考线索 (YOLO Priors):**\n高灵敏度 YOLO 辅助检测器已预先在图像中识别到以下疑似缺陷异常，请您结合增强图，优先复核并重点诊断以下坐标位置是否有微弱或隐蔽的异常特征：\n{hints_str}\n\n若这些位置在增强图中确实存在局部色差、反光微弱变化、轻微凹陷或纹理断裂，请务必在返回的 detections 列表中进行标注（标注为对应的 class_name），并在报告中做出深度成因解释！"
+
+            # 4. 发送双图进行对比度会诊推理，图像 url 在前以获得更好的对齐效果
             response = self._client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -173,8 +194,12 @@ bbox_description 必须包含位置和形态：
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "请仔细检查这张钢板表面图像，找出所有缺陷。"},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{raw_base64}"}},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{enhanced_base64}"}},
+                            {
+                                "type": "text",
+                                "text": prompt_text
+                            },
                         ],
                     },
                 ],

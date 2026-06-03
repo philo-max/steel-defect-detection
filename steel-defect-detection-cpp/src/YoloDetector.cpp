@@ -13,6 +13,15 @@ YoloDetector::YoloDetector()
     memory_info_ = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 }
 
+YoloDetector::~YoloDetector() {
+    for (const char* name : input_names_) {
+        delete[] name;
+    }
+    for (const char* name : output_names_) {
+        delete[] name;
+    }
+}
+
 bool YoloDetector::init(const std::string& model_path, bool use_gpu) {
     try {
         Ort::SessionOptions session_options;
@@ -39,6 +48,16 @@ bool YoloDetector::init(const std::string& model_path, bool use_gpu) {
 #else
         session_ = Ort::Session(env_, model_path.c_str(), session_options);
 #endif
+
+        // Free existing cached names if init is re-called
+        for (const char* name : input_names_) {
+            delete[] name;
+        }
+        input_names_.clear();
+        for (const char* name : output_names_) {
+            delete[] name;
+        }
+        output_names_.clear();
 
         // Get Input/Output Names
         Ort::AllocatorWithDefaultOptions allocator;
