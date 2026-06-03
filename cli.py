@@ -17,6 +17,10 @@ from pathlib import Path
 
 import cv2
 import yaml
+from dotenv import load_dotenv
+
+# 加载 .env 环境变量
+load_dotenv()
 
 
 def _load_config(config_path: str) -> dict:
@@ -39,12 +43,19 @@ def run_detect(config_path: str, image_path: str | None):
 
     cfg = _load_config(config_path)
     yolo_cfg = cfg.get("yolo", {})
+    clahe_cfg = yolo_cfg.get("clahe", {})
 
     from src.detection_engine import YOLODetector
     detector = YOLODetector(
         model_path=yolo_cfg.get("model_path", "models/weights/yolov8n.pt"),
         conf_threshold=yolo_cfg.get("conf_threshold", 0.25),
+        iou_threshold=yolo_cfg.get("iou_threshold", 0.45),
+        img_size=yolo_cfg.get("img_size", 640),
         device=yolo_cfg.get("device", "cuda:0"),
+        half=yolo_cfg.get("half", False),
+        clahe_enabled=clahe_cfg.get("enabled", False),
+        clahe_clip_limit=clahe_cfg.get("clip_limit", 2.0),
+        clahe_tile_grid_size=tuple(clahe_cfg.get("tile_grid_size", [8, 8])),
     )
 
     try:
@@ -162,15 +173,59 @@ def run_verify(config_path: str):
     else:
         print(f"[INFO] 数据库将自动创建: {db_path}")
 
-    # 6. VLM API Key
+    # 6. VLM API Key & 延迟测算
     vlm_cfg = cfg.get("vlm", {})
     if vlm_cfg.get("enabled", True):
-        api_keys = ["GEMINI_API_KEY", "DASHSCOPE_API_KEY", "VLM_API_KEY"]
-        found = any(os.getenv(k) for k in api_keys)
-        if found:
-            print("[OK] VLM API Key 已配置")
+        from src.vlm_engine import _detect_provider
+        provider, api_key, api_base, model = _detect_provider()
+        if provider != "none" and api_base:
+            print(f"[OK] VLM API 节点已配置: 提供商={provider}, 接口地址={api_base}")
+            
+            import urllib.request
+            import time
+            from urllib.parse import urlparse
+            from urllib.error import HTTPError
+            
+            try:
+                parsed_url = urlparse(api_base)
+                domain = parsed_url.netloc or parsed_url.path.split('/')[0]
+                
+                print(f"[INFO] 正在测试 VLM API 节点网络连接时延 ({domain})...")
+                latencies = []
+                success_count = 0
+                for _ in range(3):
+                    start_t = time.perf_counter()
+                    try:
+                        req = urllib.request.Request(
+                            api_base,
+                            method="GET" if provider == "gemini" else "HEAD"
+                        )
+                        req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            response.read(1)
+                        latency = (time.perf_counter() - start_t) * 1000
+                        latencies.append(latency)
+                        success_count += 1
+                    except HTTPError:
+                        # 收到 HTTP 状态码错误也算作成功的网络往返时间测量
+                        latency = (time.perf_counter() - start_t) * 1000
+                        latencies.append(latency)
+                        success_count += 1
+                    except Exception:
+                        pass
+                
+                if success_count > 0:
+                    avg_latency = sum(latencies) / len(latencies)
+                    print(f"[OK] VLM API 平均连接延迟: {avg_latency:.1f}ms (成功率: {success_count}/3)")
+                    if avg_latency > 1000:
+                        print(f"[WARN] 延迟较高 (>1000ms)，在线质检复核可能存在响应卡顿")
+                else:
+                    print(f"[FAIL] 无法连接到 VLM API 节点 ({domain})，请求超时或解析失败")
+                    issues.append(f"VLM API 节点连接失败 ({domain})")
+            except Exception as test_err:
+                print(f"[WARN] 网络延迟测试出现异常: {test_err}")
         else:
-            print("[WARN] 未检测到 VLM API Key，VLM 复核不可用")
+            print("[WARN] 未检测到有效的 VLM API Key，VLM 复核不可用")
 
     # 7. 相机
     cam_cfg = cfg.get("camera", {})
@@ -354,3 +409,7 @@ def run_cli(config_path: str):
         run_status(cfg)
     elif args.command == "switch-model":
         sys.exit(run_switch_model(cfg, args.model_path))
+
+
+if __name__ == "__main__":
+    run_cli("config.yaml")

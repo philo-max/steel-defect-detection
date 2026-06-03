@@ -15,7 +15,8 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from ultralytics import YOLO
+import yaml
+from src.detection_engine import YOLODetector
 from dotenv import load_dotenv
 
 # Setup paths and logger
@@ -117,10 +118,29 @@ system_stats = {
 def run_realtime_pipeline():
     logger.info("Initializing background real-time YOLOv8 scanning pipeline...")
     
-    # Load YOLOv8 Model using Ultralytics
+    # Load YOLOv8 Model using YOLODetector to support CLAHE
     try:
-        model = YOLO(str(MODEL_PATH))
-        logger.info(f"YOLOv8 weights successfully loaded from: {MODEL_PATH}")
+        config_path = PROJECT_ROOT / "config.yaml"
+        config = {}
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+        yolo_cfg = config.get("yolo", {})
+        clahe_cfg = yolo_cfg.get("clahe", {})
+        
+        model = YOLODetector(
+            model_path=str(MODEL_PATH),
+            conf_threshold=yolo_cfg.get("conf_threshold", 0.05),
+            iou_threshold=yolo_cfg.get("iou_threshold", 0.45),
+            img_size=yolo_cfg.get("img_size", 640),
+            device=yolo_cfg.get("device", "auto"),
+            half=yolo_cfg.get("half", True),
+            clahe_enabled=clahe_cfg.get("enabled", True),
+            clahe_clip_limit=clahe_cfg.get("clip_limit", 2.0),
+            clahe_tile_grid_size=tuple(clahe_cfg.get("tile_grid_size", [8, 8])),
+        )
+        model.load_model()
+        logger.info(f"YOLODetector successfully loaded from: {MODEL_PATH} (CLAHE enabled: {model.clahe_enabled})")
     except Exception as e:
         logger.error(f"Failed to load YOLOv8 model! {e}")
         return
@@ -161,9 +181,11 @@ def run_realtime_pipeline():
         active_frame = mock_defect_frame if has_defect else mock_frame
         
         # Model Inference
-        start_time = time.time()
-        results = model(active_frame, verbose=False)
-        inference_ms = (time.time() - start_time) * 1000.0
+        inference_res = model.detect(active_frame)
+        if inference_res.error:
+            logger.error(f"YOLODetector inference error: {inference_res.error}")
+            continue
+        inference_ms = inference_res.inference_time_ms
         
         system_stats["inference_delay"] = inference_ms
         
@@ -173,31 +195,31 @@ def run_realtime_pipeline():
         min_conf = 0.99
         defect_names = []
 
-        if len(results) > 0:
-            boxes = results[0].boxes
-            for box in boxes:
-                cls_id = int(box.cls[0])
-                class_name = model.names[cls_id]
-                cn_name = class_cn.get(class_name, "未知")
-                conf = float(box.conf[0])
-                
-                # Bounding Box [x, y, w, h]
-                xyxy = box.xyxy[0].tolist()
-                x = int(xyxy[0])
-                y = int(xyxy[1])
-                w = int(xyxy[2] - xyxy[0])
-                h = int(xyxy[3] - xyxy[1])
+        img_h, img_w = active_frame.shape[:2]
+        for det in inference_res.detections:
+            x1 = int(det.bbox[0] * img_w)
+            y1 = int(det.bbox[1] * img_h)
+            x2 = int(det.bbox[2] * img_w)
+            y2 = int(det.bbox[3] * img_h)
+            x = x1
+            y = y1
+            w = x2 - x1
+            h = y2 - y1
 
-                defects_list.append({
-                    "type": class_name,
-                    "cn": cn_name,
-                    "confidence": conf,
-                    "box": [x, y, w, h]
-                })
-                defect_names.append(cn_name)
-                defect_count += 1
-                if conf < min_conf:
-                    min_conf = conf
+            class_name = det.class_name
+            cn_name = class_cn.get(class_name, "未知")
+            conf = det.confidence
+
+            defects_list.append({
+                "type": class_name,
+                "cn": cn_name,
+                "confidence": conf,
+                "box": [x, y, w, h]
+            })
+            defect_names.append(cn_name)
+            defect_count += 1
+            if conf < min_conf:
+                min_conf = conf
 
         # Formulate record
         record_id = random.randint(10000, 99999)
@@ -607,7 +629,10 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep connection alive, listen for incoming messages if any
             data = await websocket.receive_text()
-            logger.info(f"Received message from client: {data}")
+            if data == "ping":
+                await websocket.send_text("pong")
+            else:
+                logger.info(f"Received message from client: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

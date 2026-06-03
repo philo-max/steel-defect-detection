@@ -64,7 +64,12 @@ export interface SystemMetrics {
 export const useDefectStore = defineStore('defect', {
   state: () => ({
     connected: false,
+    connectionStatus: 'disconnected' as 'connected' | 'reconnecting' | 'disconnected',
     ws: null as WebSocket | null,
+    pingIntervalId: null as any,
+    reconnectTimeoutId: null as any,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 10,
     systemMetrics: {
       cpu_usage: 12,
       cpu_temp: 45,
@@ -85,25 +90,65 @@ export const useDefectStore = defineStore('defect', {
 
   actions: {
     connectWebSocket() {
+      // Clear any existing connection/timers first
       if (this.ws) {
+        this.ws.onopen = null;
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
         this.ws.close();
+        this.ws = null;
+      }
+      if (this.pingIntervalId) {
+        clearInterval(this.pingIntervalId);
+        this.pingIntervalId = null;
+      }
+      if (this.reconnectTimeoutId) {
+        clearTimeout(this.reconnectTimeoutId);
+        this.reconnectTimeoutId = null;
       }
 
       // Default Drogon Server WebSocket Address
       const wsUrl = `ws://${window.location.hostname}:8080/camera/stream`;
       console.log(`[WebSocket] Connecting to ${wsUrl}...`);
       
-      this.ws = new WebSocket(wsUrl);
+      try {
+        this.ws = new WebSocket(wsUrl);
+      } catch (err) {
+        console.error('[WebSocket] Failed to instantiate WebSocket:', err);
+        this.handleReconnect();
+        return;
+      }
+
+      let missedPongs = 0;
 
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected successfully!');
         this.connected = true;
+        this.connectionStatus = 'connected';
+        this.reconnectAttempts = 0;
+
+        // Start Heartbeat: Ping every 5 seconds
+        this.pingIntervalId = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            missedPongs++;
+            if (missedPongs >= 3) {
+              console.warn('[WebSocket] Heartbeat lost: missed 3 pongs. Closing connection...');
+              if (this.ws) {
+                this.ws.close();
+              }
+              return;
+            }
+            this.ws.send('ping');
+          }
+        }, 5000);
       };
 
-      this.ws.onclose = () => {
-        console.log('[WebSocket] Disconnected! Reconnecting in 3 seconds...');
+      this.ws.onclose = (event) => {
+        console.log('[WebSocket] Closed:', event);
         this.connected = false;
-        setTimeout(() => this.connectWebSocket(), 3000);
+        this.cleanupConnection();
+        this.handleReconnect();
       };
 
       this.ws.onerror = (error) => {
@@ -112,6 +157,11 @@ export const useDefectStore = defineStore('defect', {
 
       this.ws.onmessage = (event) => {
         try {
+          if (event.data === 'pong') {
+            missedPongs = 0;
+            return;
+          }
+
           const data = JSON.parse(event.data);
           
           if (data.type === 'metrics') {
@@ -126,6 +176,40 @@ export const useDefectStore = defineStore('defect', {
         }
       };
     },
+
+    cleanupConnection() {
+      if (this.pingIntervalId) {
+        clearInterval(this.pingIntervalId);
+        this.pingIntervalId = null;
+      }
+      if (this.ws) {
+        this.ws.onopen = null;
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
+        this.ws = null;
+      }
+    },
+
+    handleReconnect() {
+      if (this.reconnectTimeoutId) {
+        clearTimeout(this.reconnectTimeoutId);
+      }
+
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.connectionStatus = 'reconnecting';
+        const delay = Math.pow(2, this.reconnectAttempts) * 1000;
+        console.log(`[WebSocket] Reconnecting in ${delay}ms (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})...`);
+        this.reconnectAttempts++;
+        this.reconnectTimeoutId = setTimeout(() => {
+          this.connectWebSocket();
+        }, delay);
+      } else {
+        console.error(`[WebSocket] Max reconnect attempts (${this.maxReconnectAttempts}) reached. Giving up.`);
+        this.connectionStatus = 'disconnected';
+      }
+    },
+
 
     async fetchHistory() {
       try {

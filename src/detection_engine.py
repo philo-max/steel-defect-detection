@@ -26,6 +26,9 @@ class YOLODetector(BaseDetector):
         device: str = "auto",
         half: bool = False,
         augment: bool = False,
+        clahe_enabled: bool = False,
+        clahe_clip_limit: float = 2.0,
+        clahe_tile_grid_size: tuple[int, int] = (8, 8),
     ):
         super().__init__(name="yolo")
         # auto 模式: 自动检测最佳设备
@@ -42,6 +45,9 @@ class YOLODetector(BaseDetector):
         self.device = device
         self.half = half
         self.augment = augment
+        self.clahe_enabled = clahe_enabled
+        self.clahe_clip_limit = clahe_clip_limit
+        self.clahe_tile_grid_size = clahe_tile_grid_size
         self._model: Optional[YOLO] = None
 
     def load_model(self, model_path: Optional[str] = None, **kwargs) -> None:
@@ -79,8 +85,22 @@ class YOLODetector(BaseDetector):
         start = time.perf_counter()
 
         try:
+            # 预处理: 自适应对比度增强 (CLAHE)
+            if self.clahe_enabled:
+                import cv2
+                if len(image.shape) == 3 and image.shape[2] == 3:
+                    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+                    clahe = cv2.createCLAHE(clipLimit=self.clahe_clip_limit, tileGridSize=self.clahe_tile_grid_size)
+                    hsv[:, :, 2] = clahe.apply(hsv[:, :, 2])
+                    processed_image = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+                else:
+                    clahe = cv2.createCLAHE(clipLimit=self.clahe_clip_limit, tileGridSize=self.clahe_tile_grid_size)
+                    processed_image = clahe.apply(image)
+            else:
+                processed_image = image
+
             results = self._model.predict(
-                source=image,
+                source=processed_image,
                 conf=self.conf_threshold,
                 iou=self.iou_threshold,
                 imgsz=self.img_size,

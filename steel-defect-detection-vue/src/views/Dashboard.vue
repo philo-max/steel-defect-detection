@@ -41,9 +41,18 @@
       <!-- Connection Status Indicator -->
       <div class="flex items-center gap-6">
         <div class="flex items-center gap-2">
-          <div class="w-2.5 h-2.5 rounded-full shadow-lg" :class="store.connected ? 'bg-green-500 shadow-green-500/50 animate-pulse' : 'bg-amber-500 shadow-amber-500/50'"></div>
+          <div 
+            class="w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-300" 
+            :class="{
+              'bg-green-500 shadow-green-500/50 animate-pulse': store.connectionStatus === 'connected',
+              'bg-amber-500 shadow-amber-500/50 animate-bounce': store.connectionStatus === 'reconnecting',
+              'bg-rose-500 shadow-rose-500/50': store.connectionStatus === 'disconnected'
+            }"
+          ></div>
           <span class="text-[11px] font-bold font-mono text-slate-300 tracking-wider">
-            {{ store.connected ? 'C++ 后端联机 ACTIVE' : '单机仿真 DEMO MODE' }}
+            <template v-if="store.connectionStatus === 'connected'">C++ 后端联机 ACTIVE</template>
+            <template v-else-if="store.connectionStatus === 'reconnecting'">网络断连 重连中...</template>
+            <template v-else>单机仿真 DEMO MODE</template>
           </span>
         </div>
         <div class="text-[11px] text-slate-400 font-mono hidden md:block">

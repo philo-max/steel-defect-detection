@@ -84,6 +84,10 @@ yolo:
   img_size: 640
   device: "auto"           # auto=cuda:0 if available, else cpu
   half: true               # FP16 (GPU only) — RTX 5060 支持
+  clahe:
+    enabled: true          # 是否在 YOLO 推理前执行自适应对比度增强
+    clip_limit: 2.0        # 直方图剪裁限制
+    tile_grid_size: [8, 8]  # 网格区域大小 (8x8)
 
 # --- VLM 检测引擎 ---
 vlm:

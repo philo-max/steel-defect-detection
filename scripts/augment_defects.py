@@ -170,13 +170,17 @@ def extract_defects(
 
 # ==================== 缺陷粘贴 ====================
 
-def random_transform(defect_img: np.ndarray) -> np.ndarray:
+def random_transform(defect_img: np.ndarray, class_id: Optional[int] = None) -> np.ndarray:
     """
-    对缺陷区域随机几何变换。
+    对缺陷区域随机几何与色彩变换。
 
-    - 旋转: -30° ~ +30°
-    - 缩放: 0.7× ~ 1.5×
-    - 水平翻转: 50% 概率
+    - 几何变换 (所有类别):
+      - 旋转: -30° ~ +30°
+      - 缩放: 0.7× ~ 1.5×
+      - 水平翻转: 50% 概率
+    - 色彩与对比度变换 (仅针对 inclusion 和 rolled-in_scale 类别):
+      - 亮度抖动: 0.7 ~ 1.3× 随机系数
+      - 对比度增强: 自动应用 CLAHE 自适应直方图均衡化
     """
     dh, dw = defect_img.shape[:2]
 
@@ -207,6 +211,26 @@ def random_transform(defect_img: np.ndarray) -> np.ndarray:
     # 随机水平翻转
     if random.random() < 0.5:
         transformed = cv2.flip(transformed, 1)
+
+    # 针对 inclusion (1) 和 rolled-in_scale (4) 进行附加的颜色/对比度增强
+    if class_id in (1, 4):
+        # 1. 亮度抖动
+        brightness_factor = random.uniform(0.7, 1.3)
+        transformed = np.clip(transformed.astype(np.float32) * brightness_factor, 0, 255).astype(np.uint8)
+
+        # 2. 对比度增强 (CLAHE)
+        try:
+            clip_limit = random.uniform(1.5, 3.0)
+            tile_grid = (min(8, max(2, transformed.shape[1] // 4)), min(8, max(2, transformed.shape[0] // 4)))
+            clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid)
+            if len(transformed.shape) == 3 and transformed.shape[2] == 3:
+                hsv = cv2.cvtColor(transformed, cv2.COLOR_BGR2HSV)
+                hsv[:, :, 2] = clahe.apply(hsv[:, :, 2])
+                transformed = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+            else:
+                transformed = clahe.apply(transformed)
+        except Exception:
+            pass
 
     return transformed
 
@@ -425,7 +449,7 @@ def augment_dataset(
                 defect = random.choice(defects_by_class[cls_id])
 
                 # 随机变换
-                transformed = random_transform(defect["image"])
+                transformed = random_transform(defect["image"], cls_id)
                 td_h, td_w = transformed.shape[:2]
 
                 if td_w <= 5 or td_h <= 5:

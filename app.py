@@ -369,12 +369,16 @@ class AppState:
                         device = "cpu"
                 except Exception:
                     device = "cpu"
+            clahe_cfg = yolo_cfg.get("clahe", {})
             self.yolo = YOLO(
                 model_path=yolo_cfg.get("model_path", "models/weights/yolov8n.pt"),
                 conf_threshold=yolo_cfg.get("conf_threshold", 0.25),
                 iou_threshold=yolo_cfg.get("iou_threshold", 0.45),
                 img_size=yolo_cfg.get("img_size", 640),
                 device=device,
+                clahe_enabled=clahe_cfg.get("enabled", False),
+                clahe_clip_limit=clahe_cfg.get("clip_limit", 2.0),
+                clahe_tile_grid_size=tuple(clahe_cfg.get("tile_grid_size", [8, 8])),
             )
         except ImportError:
             print("[WARN] ultralytics 未安装，YOLO 检测不可用。请运行: pip install ultralytics")
