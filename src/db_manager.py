@@ -5,14 +5,24 @@
 """
 
 import json
+import os
 import shutil
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 from contextlib import contextmanager
+from loguru import logger
+
+# 可选 SQLCipher 支持
+try:
+    import sqlcipher3
+    HAS_SQLCIPHER = True
+except ImportError:
+    HAS_SQLCIPHER = False
+    logger.info("sqlcipher3 未安装，使用标准 SQLite3（无加密）")
 
 
 @dataclass
@@ -32,60 +42,153 @@ class InspectionRecord:
     review_status: str = "pending"  # pending | confirmed | corrected
     review_time: str = ""
     note: str = ""
+    engine: str = "yolo"          # 检测引擎类型 (yolo/vlm)
     id: Optional[int] = None
 
 
 class DBManager:
-    """SQLite 数据库管理器"""
+    """SQLite 数据库管理器 (支持 SQLCipher 加密)"""
 
     def __init__(self, db_path: str = "data/inspection.db"):
         self.db_path = db_path
         self._local = threading.local()
+        self._all_conns = set()
+        self._conns_lock = threading.Lock()
+        
+        # 获取加密密钥，必须从环境变量读取
+        self.encryption_key = os.getenv("DB_ENCRYPTION_KEY", "")
+        if not self.encryption_key:
+            if HAS_SQLCIPHER:
+                logger.warning("DB_ENCRYPTION_KEY 未设置，数据库将以明文存储；生产环境必须设置此环境变量")
+            self.encryption_key = ""
+        
+        # 自动迁移已有的明文数据库为 SQLCipher 密文数据库
+        self._migrate_to_sqlcipher()
+        
         self._init_db()
 
+    def _migrate_to_sqlcipher(self) -> None:
+        """明文数据库转密文数据库的自动迁移逻辑"""
+        if not HAS_SQLCIPHER:
+            return
+        if not self.encryption_key:
+            return
+        if not os.path.exists(self.db_path):
+            return
+
+        # 检测是否为明文数据库
+        is_plaintext = False
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("SELECT count(*) FROM sqlite_master")
+            conn.close()
+            is_plaintext = True
+        except Exception:
+            # 无法以明文方式读取，说明已经是密文或不是有效SQLite
+            pass
+
+        if is_plaintext:
+            logger.info(f"检测到明文数据库 {self.db_path}，正在进行 SQLCipher 加密迁移...")
+            encrypted_path = self.db_path + ".encrypted"
+            if os.path.exists(encrypted_path):
+                os.remove(encrypted_path)
+
+            try:
+                # 打开明文库并附加加密新库
+                conn = sqlcipher3.connect(self.db_path)
+                conn.execute(f"ATTACH DATABASE '{encrypted_path}' AS encrypted KEY '{self.encryption_key}'")
+                conn.execute("SELECT sqlcipher_export('encrypted')")
+                conn.execute("DETACH DATABASE encrypted")
+                conn.close()
+
+                # 文件备份与替换
+                backup_path = self.db_path + ".plaintext.bak"
+                if os.path.exists(backup_path):
+                    os.remove(backup_path)
+                shutil.move(self.db_path, backup_path)
+                shutil.move(encrypted_path, self.db_path)
+                logger.info(f"数据库加密成功！明文备份已保存至: {backup_path}")
+            except Exception as e:
+                logger.error(f"数据库加密迁移失败: {e}")
+                if os.path.exists(encrypted_path):
+                    os.remove(encrypted_path)
+
     def _init_db(self) -> None:
-        """初始化数据库表"""
-        with self._get_conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS inspection_records (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    image_path      TEXT NOT NULL,
-                    result_path     TEXT DEFAULT '',
-                    yolo_result     TEXT DEFAULT '{}',
-                    vlm_result      TEXT DEFAULT '{}',
-                    final_result    TEXT DEFAULT '{}',
-                    defect_types    TEXT DEFAULT '',
-                    defect_count    INTEGER DEFAULT 0,
-                    confidence      REAL DEFAULT 0.0,
-                    reviewer        TEXT DEFAULT '',
-                    review_status   TEXT DEFAULT 'pending',
-                    review_time     DATETIME,
-                    note            TEXT DEFAULT ''
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_timestamp
-                ON inspection_records(timestamp)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_defect_types
-                ON inspection_records(defect_types)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_review_status
-                ON inspection_records(review_status)
-            """)
-            conn.commit()
+        """初始化数据库表并升级列"""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS inspection_records (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        image_path      TEXT NOT NULL,
+                        result_path     TEXT DEFAULT '',
+                        yolo_result     TEXT DEFAULT '{}',
+                        vlm_result      TEXT DEFAULT '{}',
+                        final_result    TEXT DEFAULT '{}',
+                        defect_types    TEXT DEFAULT '',
+                        defect_count    INTEGER DEFAULT 0,
+                        confidence      REAL DEFAULT 0.0,
+                        reviewer        TEXT DEFAULT '',
+                        review_status   TEXT DEFAULT 'pending',
+                        review_time     DATETIME,
+                        note            TEXT DEFAULT '',
+                        engine          TEXT DEFAULT 'yolo'
+                    )
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_timestamp
+                    ON inspection_records(timestamp)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_defect_types
+                    ON inspection_records(defect_types)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_review_status
+                    ON inspection_records(review_status)
+                """)
+                
+                # 检测并在线升级已有老数据库结构
+                cursor = conn.execute("PRAGMA table_info(inspection_records)")
+                columns = [row['name'] for row in cursor.fetchall()]
+                if 'engine' not in columns:
+                    conn.execute("ALTER TABLE inspection_records ADD COLUMN engine TEXT DEFAULT 'yolo'")
+                    logger.info("数据库结构升级：为 'inspection_records' 添加了 'engine' 字段")
+                    
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"数据库打开失败 ({e})，备份旧文件并重建...")
+            backup_path = self.db_path + ".backup"
+            try:
+                if os.path.exists(self.db_path):
+                    import shutil
+                    shutil.copy2(self.db_path, backup_path)
+                os.remove(self.db_path)
+            except Exception:
+                pass
+            self._local.conn = None
+            self._init_db()
 
     @contextmanager
     def _get_conn(self):
         """获取线程安全的数据库连接"""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(self.db_path)
-            self._local.conn.row_factory = sqlite3.Row
-            self._local.conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn.execute("PRAGMA busy_timeout=5000")
+            if HAS_SQLCIPHER and self.encryption_key:
+                conn = sqlcipher3.connect(self.db_path, timeout=5.0)
+                conn.execute(f"PRAGMA key = '{self.encryption_key}'")
+                conn.row_factory = sqlcipher3.Row
+            else:
+                conn = sqlite3.connect(self.db_path, timeout=5.0)
+                conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+            with self._conns_lock:
+                self._all_conns.add(conn)
+            try:
+                self._local.conn.execute("PRAGMA journal_mode=WAL")
+                self._local.conn.execute("PRAGMA synchronous=NORMAL")
+            except Exception as e:
+                logger.warning(f"无法设置 WAL 模式: {e}")
         try:
             yield self._local.conn
         except Exception:
@@ -216,6 +319,14 @@ class DBManager:
 
         return [self._row_to_record(r) for r in rows]
 
+    def get_audited_dataset(self) -> list[dict]:
+        """获取经审核修正或确权后的检测记录数据集"""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM inspection_records WHERE review_status IN ('corrected', 'confirmed') ORDER BY timestamp DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def count(
         self,
         start_time: Optional[str] = None,
@@ -279,14 +390,15 @@ class DBManager:
     # ==================== 工具方法 ====================
 
     def _row_to_record(self, row) -> InspectionRecord:
-        """将数据库行转换为 InspectionRecord，自动过滤无效字段"""
-        row_dict = dict(row)
-        # 只保留 InspectionRecord 定义的字段，忽略数据库中多余的列
-        valid_fields = {f.name for f in fields(InspectionRecord)}
-        filtered = {k: v for k, v in row_dict.items() if k in valid_fields}
-        return InspectionRecord(**filtered)
+        return InspectionRecord(**dict(row))
 
     def close(self) -> None:
-        if hasattr(self._local, "conn") and self._local.conn:
-            self._local.conn.close()
+        with self._conns_lock:
+            for conn in list(self._all_conns):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._all_conns.clear()
+        if hasattr(self._local, "conn"):
             self._local.conn = None

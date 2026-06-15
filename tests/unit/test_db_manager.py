@@ -88,6 +88,27 @@ class TestDBManager:
         db.insert(InspectionRecord(image_path="b.jpg"))
         assert db.count() == 2
 
+    def test_get_audited_dataset(self, db):
+        db.insert(InspectionRecord(
+            image_path="a.jpg",
+            review_status="corrected"
+        ))
+        db.insert(InspectionRecord(
+            image_path="b.jpg",
+            review_status="confirmed"
+        ))
+        db.insert(InspectionRecord(
+            image_path="c.jpg",
+            review_status="pending"
+        ))
+        
+        audited = db.get_audited_dataset()
+        assert len(audited) == 2
+        # Should be ordered by ID desc or timestamp desc
+        assert audited[0]["image_path"] == "b.jpg"
+        assert audited[1]["image_path"] == "a.jpg"
+
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

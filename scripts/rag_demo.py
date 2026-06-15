@@ -1,237 +1,336 @@
 """
-RAG 根因分析模块 — 结合国家标准（GB/T）与大模型生成专业处置报告。
+实训2: 基于RAG的质检知识库检索增强
+
+构建钢铁缺陷知识库，通过检索增强生成实现根因分析。
 """
 
-import os
-import sqlite3
-from pathlib import Path
-from typing import Optional
 from openai import OpenAI
+import os
+from loguru import logger
+from dotenv import load_dotenv
 
-# 获取项目根目录及数据库路径
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "data" / "inspection.db"
+load_dotenv()
 
-# 缺陷类别名称映射
-DEFECT_MAP = {
-    "crazing": "裂纹/龟裂",
-    "crack": "裂纹",
-    "inclusion": "非金属夹杂",
-    "patches": "色差斑块",
-    "pitted_surface": "麻点凹坑",
-    "rolled-in_scale": "轧制氧化皮",
-    "rolled_in_scale": "轧制氧化皮",
-    "scale": "氧化皮",
-    "scratches": "划痕/擦伤",
-    "scratch": "划痕",
-    "rust": "铁皮锈蚀",
-    "blister": "起皮气泡",
-}
 
-def _get_api_client() -> tuple[Optional[OpenAI], str]:
-    """探测 API 客户端与模型"""
-    # 尝试读取环境变量
-    api_key = os.getenv("VLM_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
-    if not api_key:
-        return None, ""
-        
-    # 自定义或默认 Gemini Endpoint
-    base_url = os.getenv("VLM_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta/openai/"
-    model = os.getenv("VLM_MODEL") or "gemini-2.5-flash"
-    
-    if os.getenv("DASHSCOPE_API_KEY"):
-        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        model = "qwen-vl-max"
-        
-    try:
-        client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=15,
-            max_retries=2
+# ==================== API 配置 ====================
+def _get_client():
+    # 优先使用阿里通义千问（国内访问稳定）
+    key = os.getenv("DASHSCOPE_API_KEY", "")
+    if key:
+        return OpenAI(
+            api_key=key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            timeout=30,
+        ), "qwen-plus", "Qwen (通义千问)"
+
+    # 其次使用 Google Gemini（免费额度）
+    key = os.getenv("GEMINI_API_KEY", "")
+    if key:
+        return OpenAI(
+            api_key=key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=30,
+        ), "gemini-2.5-flash", "Gemini (免费)"
+
+    # 备用：SiliconFlow
+    key = os.getenv("SILICONFLOW_API_KEY", "")
+    if key:
+        return OpenAI(
+            api_key=key,
+            base_url="https://api.siliconflow.cn/v1",
+            timeout=30,
+        ), "Qwen/Qwen3-235B-A22B-Instruct-2507", "SiliconFlow"
+
+    return None, None, None
+
+
+client, MODEL, BACKEND = _get_client()
+
+
+# ==================== 知识库 ====================
+
+KNOWLEDGE_BASE = [
+    {
+        "keywords": ["氧化铁皮", "氧化皮", "鱼鳞", "红色", "压入", "rolled-in_scale", "scale"],
+        "defect_type": "氧化铁皮压入",
+        "content": (
+            "【缺陷类型】氧化铁皮压入 (Rolled-in Scale)\n"
+            "【外观特征】呈鱼鳞状或片状，红棕色至暗灰色，嵌入钢板表面。\n"
+            "【可能原因】\n"
+            "  1. 除鳞系统压力不足 (<15MPa)，高压水未能有效清除表面氧化皮；\n"
+            "  2. 轧辊表面粗糙度过高，将氧化皮压入钢基体；\n"
+            "  3. 上游加热炉内氧化气氛过重，一次氧化皮过厚。\n"
+            "【建议措施】\n"
+            "  1. 检查并调整除鳞泵压力至18-22MPa；\n"
+            "  2. 定期更换或修磨轧辊，保持表面光洁度Ra<1.6μm；\n"
+            "  3. 优化加热炉空燃比，减少氧化烧损。\n"
+            "【严重程度分级】\n"
+            "  轻度: 零星分布，面积<5%；中度: 条带状，面积5-15%；重度: 大面积覆盖，面积>15%"
         )
-        return client, model
-    except Exception:
-        return None, ""
+    },
+    {
+        "keywords": ["划痕", "scratch", "直线", "沟槽", "机械损伤", "条痕"],
+        "defect_type": "划痕",
+        "content": (
+            "【缺陷类型】划痕 (Scratch)\n"
+            "【外观特征】沿轧制方向或随机方向的直线/弯曲沟槽，颜色较基体更亮。\n"
+            "【可能原因】\n"
+            "  1. 导卫板磨损严重或粘附异物，与带钢表面摩擦；\n"
+            "  2. 轧辊边部有毛刺或崩裂；\n"
+            "  3. 运输辊道速度不匹配，板间滑动摩擦。\n"
+            "【建议措施】\n"
+            "  1. 检查并更换磨损导卫板，确保表面光滑无毛刺；\n"
+            "  2. 清理轧辊边部，必要时修磨或更换；\n"
+            "  3. 优化辊道速度同步控制，避免板间相对滑动。\n"
+            "【严重程度分级】\n"
+            "  轻度: 深度<0.05mm；中度: 深度0.05-0.15mm；重度: 深度>0.15mm"
+        )
+    },
+    {
+        "keywords": ["点蚀", "麻点", "pitted_surface", "坑", "腐蚀", "凹坑"],
+        "defect_type": "麻点/点蚀",
+        "content": (
+            "【缺陷类型】麻点/点蚀 (Pitted Surface)\n"
+            "【外观特征】表面密集分布的微小凹坑，直径0.5-3mm，深度较浅。\n"
+            "【可能原因】\n"
+            "  1. 冷却水水质不佳（Cl⁻含量>50ppm），导致局部电化学腐蚀；\n"
+            "  2. 钢中夹杂物（MnS、Al₂O₃）暴露于表面后被腐蚀脱落；\n"
+            "  3. 酸洗过度或酸液残留，造成过腐蚀。\n"
+            "【建议措施】\n"
+            "  1. 改善冷却水质，控制Cl⁻<30ppm，添加缓蚀剂；\n"
+            "  2. 优化炼钢脱氧工艺，减少非金属夹杂物；\n"
+            "  3. 控制酸洗时间和温度，确保充分冲洗。\n"
+            "【严重程度分级】\n"
+            "  轻度: 零星分布；中度: 局部密集；重度: 大面积密集分布"
+        )
+    },
+    {
+        "keywords": ["裂纹", "crack", "crazing", "裂缝", "锯齿", "开裂"],
+        "defect_type": "裂纹/龟裂",
+        "content": (
+            "【缺陷类型】裂纹/龟裂 (Crack/Crazing)\n"
+            "【外观特征】不规则网状或线状开裂，呈黑色锯齿状，深度较大。\n"
+            "【可能原因】\n"
+            "  1. 轧制温度过低 (<Ar₃相变点)，材料塑性不足产生应力裂纹；\n"
+            "  2. 冷却速率过快，产生过大的热应力；\n"
+            "  3. 钢中氢含量过高，产生氢致裂纹；\n"
+            "  4. 铸坯原有皮下气泡或缩孔在轧制中扩展。\n"
+            "【建议措施】\n"
+            "  1. 严格控制终轧温度在Ar₃以上30-50℃；\n"
+            "  2. 优化层流冷却制度，避免急冷；\n"
+            "  3. 加强炼钢脱气处理，控制[H]<2ppm；\n"
+            "  4. 对铸坯进行表面检查和修磨。\n"
+            "【严重程度分级】\n"
+            "  轻度: 微裂纹，长度<5mm；中度: 可见裂纹，5-20mm；重度: 贯穿性裂纹，>20mm"
+        )
+    },
+    {
+        "keywords": ["斑块", "patches", "色差", "黑斑", "白斑", "不均匀"],
+        "defect_type": "表面斑块",
+        "content": (
+            "【缺陷类型】表面斑块 (Patches)\n"
+            "【外观特征】局部颜色异常区域，呈暗色或亮色不规则斑块。\n"
+            "【可能原因】\n"
+            "  1. 表面局部氧化不均，与冷却水分布不均有关；\n"
+            "  2. 轧制油或乳化液残留，在退火过程中碳化；\n"
+            "  3. 来料表面原始锈蚀未清除干净。\n"
+            "【建议措施】\n"
+            "  1. 检查冷却水喷嘴，确保均匀覆盖；\n"
+            "  2. 优化轧制润滑液配比和吹扫系统；\n"
+            "  3. 加强酸洗工序管理，确保表面清洁。\n"
+            "【严重程度分级】\n"
+            "  轻度: 淡色斑；中度: 明显色差；重度: 深色碳化斑"
+        )
+    },
+    {
+        "keywords": ["夹杂", "inclusion", "夹渣", "异物", "亮点", "白点"],
+        "defect_type": "非金属夹杂",
+        "content": (
+            "【缺陷类型】非金属夹杂 (Inclusion)\n"
+            "【外观特征】表面可见的亮点、白点或不规则异物嵌入。\n"
+            "【可能原因】\n"
+            "  1. 炼钢过程中脱氧产物（Al₂O₃、SiO₂）未充分上浮；\n"
+            "  2. 连铸过程中中间包覆盖剂或结晶器保护渣卷入；\n"
+            "  3. 钢包或中间包耐火材料侵蚀脱落。\n"
+            "【建议措施】\n"
+            "  1. 优化脱氧工艺，采用Ca处理改性夹杂物；\n"
+            "  2. 加强中间包冶金效果，保证足够停留时间（>8min）；\n"
+            "  3. 选用优质耐火材料，定期检查和更换。\n"
+            "【严重程度分级】\n"
+            "  轻度: 零星微细夹杂；中度: 可见夹杂物；重度: 大型夹杂或聚集"
+        )
+    },
+    {
+        "keywords": ["压痕", "indentation", "凹痕", "凹陷", "圆形坑", "撞击"],
+        "defect_type": "压痕/凹陷",
+        "content": (
+            "【缺陷类型】压痕/凹陷 (Indentation)\n"
+            "【外观特征】局部圆形或椭圆形凹陷，边缘光滑，深度明显。\n"
+            "【可能原因】\n"
+            "  1. 异物（铁屑、焊渣）掉落在带钢表面后被轧辊压入；\n"
+            "  2. 轧辊表面有凹坑或剥落，周期性复制到带钢表面；\n"
+            "  3. 卷取时张力不当导致层间压痕。\n"
+            "【建议措施】\n"
+            "  1. 加强轧线清洁，定期清理轧辊及导卫间的异物；\n"
+            "  2. 检查轧辊表面状况，发现凹坑及时修磨或更换；\n"
+            "  3. 优化卷取张力控制，避免层间滑移。\n"
+            "【严重程度分级】\n"
+            "  轻度: 深度<0.1mm；中度: 深度0.1-0.3mm；重度: 深度>0.3mm"
+        )
+    },
+    {
+        "keywords": ["气泡", "blister", "隆起", "鼓包", "凸起"],
+        "defect_type": "气泡/鼓包",
+        "content": (
+            "【缺陷类型】气泡/鼓包 (Blister)\n"
+            "【外观特征】表面圆形隆起，内部中空，轻敲有空响声。\n"
+            "【可能原因】\n"
+            "  1. 钢中氢含量过高，在冷却过程中析出形成皮下气泡；\n"
+            "  2. 铸坯皮下气孔在轧制中未能焊合；\n"
+            "  3. 酸洗时氢原子渗入钢基体，退火时聚集膨胀。\n"
+            "【建议措施】\n"
+            "  1. 加强炼钢脱气处理，控制[H]<2ppm；\n"
+            "  2. 检查连铸保护浇注效果，防止二次氧化吸气；\n"
+            "  3. 优化酸洗工艺参数，减少氢渗入。\n"
+            "【严重程度分级】\n"
+            "  轻度: 零星微气泡；中度: 局部密集气泡；重度: 大面积气泡群"
+        )
+    },
+]
 
-def query_knowledge_base(defect_type: str, vlm_desc: str = "") -> list[dict]:
-    """从数据库中检索匹配的标准和成因"""
-    results = []
-    if not os.path.exists(str(DB_PATH)):
-        return results
-        
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # 1. 尝试缺陷类别精准匹配
-    mapped_type = defect_type.lower().strip()
-    cursor.execute(
-        "SELECT defect_type, title, standard_code, content FROM knowledge_base WHERE defect_type = ?",
-        (mapped_type,)
-    )
-    rows = cursor.fetchall()
-    
-    # 2. 如果精准匹配无结果，尝试模糊搜索或关键字搜索
-    if not rows:
-        keywords = [mapped_type]
-        if vlm_desc:
-            # 提取简单的中文或英文关键字
-            for word in ["裂纹", "夹杂", "斑块", "麻点", "氧化皮", "划痕", "锈蚀", "气泡", "crack", "scratch", "rust", "scale"]:
-                if word in vlm_desc:
-                    keywords.append(word)
-                    
-        for kw in set(keywords):
-            cursor.execute(
-                "SELECT defect_type, title, standard_code, content FROM knowledge_base WHERE defect_type LIKE ? OR title LIKE ? OR content LIKE ?",
-                (f"%{kw}%", f"%{kw}%", f"%{kw}%")
-            )
-            rows.extend(cursor.fetchall())
-            
-    # 去重
-    seen = set()
-    for row in rows:
-        r_dict = dict(row)
-        key = (r_dict["standard_code"], r_dict["title"])
-        if key not in seen:
-            seen.add(key)
-            results.append(r_dict)
-            
-    conn.close()
-    return results
 
-def rag_analyze(defect_type: str, vlm_desc: str = "") -> str:
-    """RAG 根因分析入口函数"""
-    defect_cn = DEFECT_MAP.get(defect_type.lower(), defect_type)
-    
-    # 1. 从 SQLite 检索知识库条目
-    knowledge_items = query_knowledge_base(defect_type, vlm_desc)
-    
-    if not knowledge_items:
-        # 兜底返回静态的分析
-        return f"""<div style="border-left: 4px solid #e63946; padding: 12px; background: #fff5f5; border-radius: 6px; font-family: system-ui; font-size: 13px; line-height: 1.6">
-            <h4 style="margin: 0 0 6px 0; color: #e63946; font-weight: bold">⚠️ 未匹配到国标规范</h4>
-            <p style="margin: 0; color: #555">系统检测到缺陷类型为 <b>{defect_cn}</b> ({defect_type})。当前本地知识库中未找到完全匹配的国家生产标准规范。</p>
-            <p style="margin: 6px 0 0 0; color: #777">建议人工核实缺陷等级并参考常规工艺进行纠偏。</p>
-        </div>"""
-        
-    # 拼接参考标准文本
-    references_text = ""
-    for item in knowledge_items:
-        references_text += f"标准名称: {item['title']} ({item['standard_code']})\n内容:\n{item['content']}\n\n"
-        
-    # 2. 尝试调用大模型生成高级 RAG 报告
-    client, model = _get_api_client()
-    if client:
+# ==================== 检索与生成 ====================
+
+def retrieve_context(query: str, kb: list = None) -> tuple:
+    """基于关键词匹配检索最相关的知识条目"""
+    if kb is None:
+        kb = KNOWLEDGE_BASE
+
+    query_lower = query.lower()
+    best_match = None
+    best_score = 0
+
+    for item in kb:
+        score = sum(1 for kw in item["keywords"] if kw.lower() in query_lower)
+        if score > best_score:
+            best_score = score
+            best_match = item
+
+    if best_match and best_score > 0:
+        return best_match["content"], best_match["defect_type"], best_score
+    return None, None, 0
+
+
+def call_llm(messages, temperature=0, max_retries=2):
+    """调用大模型，支持重试"""
+    if client is None:
+        return None
+    import time
+    for attempt in range(max_retries + 1):
         try:
-            prompt = f"""你是一名资深的钢铁冶金及轧钢工艺专家。你的任务是根据图像智能分析出的缺陷信息，结合提供的国家标准（GB/T）规范，为生产车间出具一份极具工业级专业度、严谨的【钢板表面缺陷根因与工艺处置分析报告】。
-
-## 待分析数据
-- 检出缺陷类型: {defect_cn} ({defect_type})
-- 视觉特征描述: {vlm_desc if vlm_desc else "待查，请参考国标做典型诊断"}
-
-## 参考国家标准及工业机理
-{references_text}
-
-## 报告输出规范
-你必须生成结构化的 HTML，包含以下板块：
-1. **📑 规范比对 (GB/T Alignment)**: 明确引用哪项国标，判定缺陷是否超标，给出判等结论（例如：A级合格 / 降级接收 / 判废切除）。
-2. **🔬 根因溯源 (Root Cause)**: 从炼钢、连铸、热轧/冷轧工艺参数（如温度、下压量、保护渣、轧辊粗糙度等）全链路细致推导产生此缺陷的原因。
-3. **🛠️ 工艺纠偏建议 (Process Optimization)**: 给出3条可在实际车间落地的具体工艺优化动作，必须带有具体的工程参数（如：温度、压力、配料比例等）。
-
-输出要求：
-- 直接返回 HTML，不要用 ```html ``` 代码块包裹。
-- 样式必须符合工业精装风，使用扁平卡片、微阴影和高对比度边框。
-- 语气必须严谨、专业、科学。
-"""
             response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "你是一名严谨的钢铁制造质检专家，只输出漂亮的 HTML 报告，不需要任何多余的前言或后记。"},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1500,
-                temperature=0.2
+                model=MODEL,
+                messages=messages,
+                temperature=temperature,
             )
-            report_content = response.choices[0].message.content or ""
-            if report_content.strip():
-                return report_content.strip()
+            return response.choices[0].message.content
         except Exception as e:
-            # 接口异常时回退到本地模板生成
-            pass
-            
-    # 3. 本地 RAG 模板拼装（Offline Fallback）
-    # 当没有网络或 API 调用失败时，将数据库中的内容拼装成极其高档的 HTML 报告
-    fallback_htmls = []
-    for item in knowledge_items:
-        content_lines = item["content"].split("\n")
-        gb_clause = ""
-        cause_analysis = ""
-        harm_eval = ""
-        action_plan = ""
-        
-        for line in content_lines:
-            if "【国标规范】" in line:
-                gb_clause = line.replace("【国标规范】", "").strip()
-            elif "【成因分析】" in line:
-                cause_analysis = line.replace("【成因分析】", "").strip()
-            elif "【危害评估】" in line:
-                harm_eval = line.replace("【危害评估】", "").strip()
-            elif "【工艺建议】" in line:
-                action_plan = line.replace("【工艺建议】", "").strip()
-                
-        # 兜底填充
-        if not gb_clause: gb_clause = item["content"]
-        
-        # 拼装专业 HTML 卡片
-        card = f"""
-        <div style="font-family: 'Segoe UI', system-ui, sans-serif; border: 1px solid #e2e8f0; border-radius: 12px; 
-                    background: #ffffff; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.03); overflow: hidden">
-            <!-- 头部 -->
-            <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 12px 18px; color: #ffffff; 
-                        display: flex; justify-content: space-between; align-items: center">
-                <span style="font-size: 15px; font-weight: 800; letter-spacing: 0.5px">📑 工业标准比对报告</span>
-                <span style="background: rgba(255,255,255,0.22); color: #ffffff; font-size: 11px; font-weight: 700; 
-                             padding: 3px 10px; border-radius: 20px">{item['standard_code']}</span>
-            </div>
-            
-            <div style="padding: 18px">
-                <!-- 1. 标准条文 -->
-                <div style="margin-bottom: 14px">
-                    <div style="font-weight: 800; font-size: 13px; color: #1565c0; margin-bottom: 4px">【对应国标】{item['title']}</div>
-                    <div style="font-size: 13px; color: #2c3e50; line-height: 1.6; background: #f8fafc; padding: 10px 14px; 
-                                border-left: 3px solid #1565c0; border-radius: 4px">
-                        {gb_clause}
-                    </div>
-                </div>
-                
-                <!-- 2. 原因分析 -->
-                {f'''<div style="margin-bottom: 14px">
-                    <div style="font-weight: 800; font-size: 13px; color: #ff6b35; margin-bottom: 4px">🔬 物理根因分析</div>
-                    <div style="font-size: 13px; color: #475569; line-height: 1.6">
-                        {cause_analysis}
-                    </div>
-                </div>''' if cause_analysis else ''}
-                
-                <!-- 3. 危害评估 -->
-                {f'''<div style="margin-bottom: 14px">
-                    <div style="font-weight: 800; font-size: 13px; color: #e63946; margin-bottom: 4px">⚡ 质量与结构危害</div>
-                    <div style="font-size: 13px; color: #475569; line-height: 1.6">
-                        {harm_eval}
-                    </div>
-                </div>''' if harm_eval else ''}
-                
-                <!-- 4. 工艺动作 -->
-                {f'''<div style="margin-top: 16px; border-top: 1px dashed #e2e8f0; padding-top: 14px">
-                    <div style="font-weight: 800; font-size: 13px; color: #2a9d8f; margin-bottom: 6px">🛠️ 车间工艺纠偏动作</div>
-                    <div style="font-size: 13px; color: #2c3e50; line-height: 1.6; background: #f0fdf4; padding: 10px 14px; 
-                                border-left: 3px solid #2a9d8f; border-radius: 4px">
-                        {action_plan}
-                    </div>
-                </div>''' if action_plan else ''}
-            </div>
-        </div>
-        """
-        fallback_htmls.append(card)
-        
-    return "\n".join(fallback_htmls)
+            if attempt < max_retries:
+                logger.warning(f"[RAG] API调用失败 (尝试 {attempt + 1}/{max_retries + 1}): {e}，重试中...")
+                time.sleep(1 * (attempt + 1))
+            else:
+                logger.error(f"[RAG] API调用失败 (已重试 {max_retries} 次): {e}")
+                return None
+
+
+def rag_analyze(defect_type: str, description: str = "") -> str:
+    """
+    完整的RAG流程: 检索知识库 → 增强生成根因分析
+    
+    Args:
+        defect_type: 缺陷类型 (如 'crack', 'scratch')
+        description: 缺陷外观描述
+    Returns:
+        根因分析报告
+    """
+    # 中英文类型映射
+    type_map = {
+        "crack": "裂纹", "crazing": "裂纹",
+        "scratch": "划痕", "scratches": "划痕",
+        "scale": "氧化铁皮", "rolled-in_scale": "氧化铁皮",
+        "indentation": "压痕", "pitted_surface": "麻点",
+        "blister": "气泡", "patches": "斑块",
+        "inclusion": "夹杂",
+    }
+    cn_type = type_map.get(defect_type.lower(), defect_type)
+
+    # 检索
+    query = f"{cn_type} {description}"
+    context, matched_type, score = retrieve_context(query)
+
+    if context is None:
+        # 尝试只用中文名检索
+        context, matched_type, score = retrieve_context(cn_type)
+
+    if context is None:
+        return f"## {cn_type} 根因分析\n\n⚠️ 知识库中未找到 '{cn_type}' 的相关知识。\n建议: 请补充知识库或咨询工艺专家。"
+
+    # 生成
+    prompt = (
+        "你是一名钢铁质量分析专家。请基于以下参考知识，"
+        "对检测到的缺陷进行专业的根因分析，给出具体的改进建议。\n\n"
+        f"【检测到的缺陷】\n"
+        f"  类型: {cn_type}\n"
+        f"  描述: {description or '详见检测图像'}\n\n"
+        f"【参考知识】\n{context}\n\n"
+        "请以简洁的要点形式输出：\n"
+        "1. 缺陷确认\n"
+        "2. 最可能的原因 (1-2条)\n"
+        "3. 建议的检查/处理措施\n"
+        "4. 是否需要停机处理"
+    )
+
+    messages = [{"role": "user", "content": prompt}]
+    answer = call_llm(messages)
+    if answer is None:
+        return None
+
+    return (
+        f"## {cn_type} 根因分析报告\n\n"
+        f"📚 知识库匹配: {matched_type} (关键词匹配度: {score})\n\n"
+        f"---\n\n{answer}"
+    )
+
+
+# ==================== 演示 ====================
+
+def demo():
+    """演示RAG vs 无RAG的差异"""
+    print("=" * 60)
+    print(f"实训2: 基于RAG的质检知识库检索增强")
+    print(f"后端: {BACKEND or '未配置'} | 知识库条目: {len(KNOWLEDGE_BASE)}")
+    print("=" * 60)
+
+    test_queries = [
+        ("scratch", "右上角白色倾斜条痕，深度较浅"),
+        ("crack", "中部偏左黑色锯齿状裂缝，长度约15mm"),
+        ("pitted_surface", "左下角密集微小凹坑"),
+    ]
+
+    for dtype, desc in test_queries:
+        print(f"\n{'─' * 50}")
+        report = rag_analyze(dtype, desc)
+        print(report)
+
+    print(f"\n{'=' * 60}")
+    print("实训2 完成!")
+    print("=" * 60)
+
+
+def main():
+    # 可以直接调用 rag_analyze 进行根因分析
+    demo()
+
+
+if __name__ == "__main__":
+    main()

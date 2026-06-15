@@ -8,45 +8,47 @@ venv/
 *.egg-info/
 dist/
 build/
+node_modules/
+frontend/node_modules/
+!frontend/dist/
+
+# 临时和打包文件
+*.zip
+*.rar
+*.tar.gz
+temp_pack/
+dist_package/
+.playwright-mcp/
 
 # 模型文件 (过大，需要单独管理)
 models/weights/*.pt
 models/weights/*.onnx
 models/weights/*.engine
 
-# 训练输出
-runs/
-
 # 数据和导出
-data/images/
+data/tmp/
+data/uploads/
+data/datasets/
+data/labels/
 data/exports/
+data/images/
 data/inspection.db
-data/inspection.db-shm
-data/inspection.db-wal
 *.db-journal
 
-# 日志
+# 训练记录和缓存
+runs/
+.pytest_cache/
 logs/
 *.log
+
+# 根目录下的临时文件/图表
+attention_heatmap.png
+term-menu.png
 
 # IDE
 .vscode/
 .idea/
 
-# 临时文件
-*.tmp
-tmp/
-.pytest_cache/
-
-
 # OS
 .DS_Store
 Thumbs.db
-
-# Vue 3 Subproject
-steel-defect-detection-vue/node_modules/
-steel-defect-detection-vue/dist/
-
-# C++ Subproject
-steel-defect-detection-cpp/build/
-steel-defect-detection-cpp/bin/

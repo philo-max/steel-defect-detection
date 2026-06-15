@@ -5,22 +5,12 @@
 import csv
 import json
 import os
-import base64
+import shutil
+import zipfile
 from datetime import datetime
 from typing import Optional
 
 from .db_manager import DBManager, InspectionRecord
-
-
-def _encode_image_base64(image_path: str) -> str:
-    """将图像编码为 Base64 数据 URI"""
-    if not image_path or not os.path.exists(image_path):
-        return ""
-    try:
-        with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except Exception:
-        return ""
 
 
 class Exporter:
@@ -52,21 +42,23 @@ class Exporter:
 
         with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
             if not records:
-                f.write("无数据\n")
+                f.write("id,timestamp\n")
                 return output_path
 
             writer = csv.DictWriter(f, fieldnames=[
-                "id", "timestamp", "defect_types", "defect_count",
-                "confidence", "review_status", "reviewer", "note",
+                "id", "timestamp", "image_path", "defect_types", "defect_count",
+                "confidence", "engine", "review_status", "reviewer", "note",
             ])
             writer.writeheader()
             for r in records:
                 writer.writerow({
                     "id": r.id,
                     "timestamp": r.timestamp,
+                    "image_path": r.image_path,
                     "defect_types": r.defect_types,
                     "defect_count": r.defect_count,
                     "confidence": r.confidence,
+                    "engine": r.engine,
                     "review_status": r.review_status,
                     "reviewer": r.reviewer,
                     "note": r.note,
@@ -79,7 +71,7 @@ class Exporter:
         output_dir: Optional[str] = None,
         limit: int = 500,
     ) -> str:
-        """导出 Bad Case 数据集 (低置信度 + 被修正的记录)"""
+        """导出 Bad Case 数据集 (低置信度 + 被修正的记录)并打包为 ZIP"""
         if output_dir is None:
             output_dir = os.path.join(self.output_dir, "badcase")
 
@@ -88,14 +80,46 @@ class Exporter:
         os.makedirs(images_dir, exist_ok=True)
 
         # 查询低置信度或已修正的记录
-        records = self.db.query(review_status="corrected", limit=limit)
-        records += self.db.query(limit=limit)  # 再补充一些最近的
+        all_records = self.db.query(limit=limit * 2)
+        records = []
+        seen_ids = set()
+
+        # 优先加入已修正记录 (corrected)
+        for r in all_records:
+            if r.review_status == "corrected":
+                if r.id not in seen_ids:
+                    records.append(r)
+                    seen_ids.add(r.id)
+
+        # 其次加入低置信度记录 (< 0.5)
+        for r in all_records:
+            if r.confidence < 0.5:
+                if r.id not in seen_ids:
+                    records.append(r)
+                    seen_ids.add(r.id)
+
+        # 如果记录还是过少，补充一些近期的记录以方便测试
+        if len(records) < 5:
+            for r in all_records:
+                if r.id not in seen_ids:
+                    records.append(r)
+                    seen_ids.add(r.id)
+
+        records = records[:limit]
 
         annotations = []
-        for r in records[:limit]:
+        for r in records:
             if r.image_path and os.path.exists(r.image_path):
+                img_name = os.path.basename(r.image_path)
+                dest_path = os.path.join(images_dir, img_name)
+                try:
+                    shutil.copy2(r.image_path, dest_path)
+                except Exception as e:
+                    print(f"[WARN] Failed to copy image {r.image_path}: {e}")
+                
                 annotations.append({
-                    "image_path": r.image_path,
+                    "id": r.id,
+                    "image_path": f"images/{img_name}",
                     "defect_types": r.defect_types,
                     "yolo_result": json.loads(r.yolo_result) if r.yolo_result else {},
                     "vlm_result": json.loads(r.vlm_result) if r.vlm_result else {},
@@ -108,7 +132,24 @@ class Exporter:
         with open(annot_path, "w", encoding="utf-8") as f:
             json.dump(annotations, f, ensure_ascii=False, indent=2)
 
-        return output_dir
+        # 打包成 ZIP
+        zip_path = os.path.join(self.output_dir, "badcase.zip")
+        if os.path.exists(zip_path):
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # 写入标注文件
+            zipf.write(annot_path, "badcase_annotations.json")
+            # 写入图片
+            for root, _, files in os.walk(images_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    zipf.write(file_path, os.path.join("images", file))
+
+        return zip_path
 
     def export_html_report(
         self,
@@ -169,166 +210,6 @@ class Exporter:
         {stats_rows or '<tr><td colspan="2">暂无数据</td></tr>'}
     </table>
     <div class="footer">钢铁表面缺陷检测系统 V1.0 - 自动生成报告</div>
-</body>
-</html>"""
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html)
-
-        return output_path
-
-    def export_inspection_report(
-        self,
-        output_path: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-    ) -> str:
-        """导出专业质检报告 (含图像 + 坐标 + 统计分析)"""
-        if output_path is None:
-            output_path = os.path.join(
-                self.output_dir,
-                f"inspection_report_{datetime.now():%Y%m%d_%H%M%S}.html",
-            )
-
-        records = self.db.query(start_time=start_time, end_time=end_time, limit=200)
-        total = len(records)
-        total_defects = sum(r.defect_count or 0 for r in records)
-        defect_rate = (total_defects / total * 100) if total > 0 else 0
-        reviewed = sum(1 for r in records if r.review_status == "confirmed")
-
-        # 缺陷类型统计
-        defect_type_counts: dict[str, int] = {}
-        confidences = []
-        for r in records:
-            for dt in (r.defect_types or "").split(","):
-                dt = dt.strip()
-                if dt:
-                    defect_type_counts[dt] = defect_type_counts.get(dt, 0) + 1
-            if r.confidence:
-                confidences.append(r.confidence)
-        avg_conf = sum(confidences) / len(confidences) if confidences else 0
-
-        # 生成记录行
-        rows = ""
-        for r in records[:50]:  # 最多50条详情
-            yolo = json.loads(r.yolo_result) if r.yolo_result else {}
-            dets = yolo.get("detections", [])
-            det_html = ""
-            if dets:
-                det_html = "<ul style='margin:0;padding-left:16px;font-size:12px'>"
-                for d in dets[:5]:
-                    bbox = d.get("bbox", [0, 0, 0, 0])
-                    cn = d.get("class_name", "?")
-                    conf = d.get("confidence", 0)
-                    det_html += (
-                        f"<li>{cn} {conf:.1%} "
-                        f"[{bbox[0]:.3f},{bbox[1]:.3f},{bbox[2]:.3f},{bbox[3]:.3f}]</li>"
-                    )
-                det_html += "</ul>"
-
-            img_b64 = _encode_image_base64(r.image_path)
-            img_tag = f'<img src="data:image/jpeg;base64,{img_b64}" style="max-width:120px;border-radius:6px">' if img_b64 else "—"
-
-            status_badge = {
-                "pending": '<span style="background:#FEFCBF;color:#975A16;padding:2px 8px;border-radius:10px;font-size:11px">待审核</span>',
-                "confirmed": '<span style="background:#C6F6D5;color:#276749;padding:2px 8px;border-radius:10px;font-size:11px">已确认</span>',
-                "corrected": '<span style="background:#FED7D7;color:#C53030;padding:2px 8px;border-radius:10px;font-size:11px">已修正</span>',
-            }.get(r.review_status or "pending", "—")
-
-            rows += f"""<tr>
-                <td>{img_tag}</td>
-                <td>{r.id}</td>
-                <td>{(r.timestamp or '')[:19]}</td>
-                <td>{r.defect_types or '—'}</td>
-                <td>{r.defect_count or 0}</td>
-                <td>{r.confidence:.1%}</td>
-                <td>{status_badge}</td>
-                <td style="font-size:11px">{det_html}</td>
-            </tr>"""
-
-        # 类型统计行
-        type_rows = "".join(
-            f"<tr><td>{k}</td><td style='text-align:center;font-weight:700'>{v}</td>"
-            f"<td>{v/total_defects*100:.1f}%</td></tr>"
-            for k, v in sorted(defect_type_counts.items(), key=lambda x: -x[1])
-        ) if total_defects > 0 else '<tr><td colspan="3">暂无数据</td></tr>'
-
-        html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>钢铁表面缺陷检测报告 - {datetime.now():%Y-%m-%d}</title>
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:'Microsoft YaHei','SimHei',sans-serif; color:#1a202c; background:#f1f5f9; }}
-.header {{ background:linear-gradient(135deg,#0d47a1,#1565c0); color:#fff; padding:28px 32px; }}
-.header h1 {{ font-size:22px; letter-spacing:2px; }}
-.header p {{ font-size:13px; opacity:0.85; margin-top:4px; }}
-.cards {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:24px 32px; max-width:1100px; margin:0 auto; }}
-.card {{ background:#fff; border-radius:12px; padding:20px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.06); }}
-.card .value {{ font-size:28px; font-weight:800; }}
-.card .label {{ font-size:11px; color:#94a3b8; text-transform:uppercase; margin-top:6px; letter-spacing:0.5px; }}
-.container {{ max-width:1100px; margin:0 auto; padding:0 32px 40px; }}
-.section {{ background:#fff; border-radius:12px; padding:24px; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }}
-.section h2 {{ font-size:16px; color:#0d47a1; margin-bottom:16px; padding-bottom:8px; border-bottom:2px solid #e2e8f0; }}
-table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-th {{ background:#f8fafc; color:#475569; font-weight:600; padding:10px 12px; text-align:left; border-bottom:2px solid #e2e8f0; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }}
-td {{ padding:10px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }}
-tr:hover {{ background:#f8fafc; }}
-.footer {{ text-align:center; color:#94a3b8; font-size:11px; padding:20px; border-top:1px solid #e2e8f0; margin-top:20px; }}
-.detail-box {{ max-height:500px; overflow-y:auto; }}
-@media print {{ body {{ background:#fff; }} .header {{ -webkit-print-color-adjust:exact; }} }}
-</style>
-</head>
-<body>
-<div class="header">
-    <h1>🔬 钢铁表面缺陷检测报告</h1>
-    <p>Steel Surface Defect Inspection Report · 自动生成 · {datetime.now():%Y-%m-%d %H:%M}</p>
-</div>
-
-<div class="cards">
-    <div class="card">
-        <div class="value" style="color:#1e40af">{total}</div>
-        <div class="label">📊 检测总数</div>
-    </div>
-    <div class="card">
-        <div class="value" style="color:#dc2626">{total_defects}</div>
-        <div class="label">⚠️ 检出缺陷</div>
-    </div>
-    <div class="card">
-        <div class="value" style="color:#d97706">{defect_rate:.1f}%</div>
-        <div class="label">📈 缺陷率</div>
-    </div>
-    <div class="card">
-        <div class="value" style="color:#16a34a">{(avg_conf*100):.1f}%</div>
-        <div class="label">✅ 均置信度</div>
-    </div>
-</div>
-
-<div class="container">
-    <div class="section">
-        <h2>📋 缺陷类型分布</h2>
-        <table>
-            <tr><th>缺陷类型</th><th style="text-align:center">数量</th><th style="text-align:center">占比</th></tr>
-            {type_rows}
-        </table>
-    </div>
-
-    <div class="section">
-        <h2>🔍 检测记录详情</h2>
-        <p style="font-size:11px;color:#94a3b8;margin-bottom:12px">时间范围: {start_time or '全部'} ~ {end_time or '全部'} · 共 {total} 条 · 已审核 {reviewed} 条</p>
-        <div class="detail-box">
-        <table>
-            <tr><th style="width:130px">图像</th><th>ID</th><th>时间</th><th>缺陷类型</th><th style="text-align:center">数量</th><th style="text-align:center">置信度</th><th>状态</th><th>坐标详情</th></tr>
-            {rows or '<tr><td colspan="8" style="text-align:center;padding:40px;color:#94a3b8">暂无检测记录</td></tr>'}
-        </table>
-        </div>
-    </div>
-</div>
-
-<div class="footer">
-    钢铁表面缺陷检测系统 V1.0 · YOLO + VLM 双引擎架构 · 对照需求规格说明书 V1.0 · 报告自动生成于 {datetime.now():%Y-%m-%d %H:%M:%S}
-</div>
 </body>
 </html>"""
 

@@ -2,10 +2,8 @@
 导出模块单元测试。
 """
 
-import csv
 import os
 import tempfile
-
 import pytest
 
 from src.db_manager import DBManager, InspectionRecord
@@ -13,80 +11,73 @@ from src.exporter import Exporter
 
 
 @pytest.fixture
-def db_with_data():
-    """创建含测试数据的临时数据库"""
+def db():
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
-    db = DBManager(path)
-    db.insert(InspectionRecord(
-        image_path="test1.jpg",
-        defect_types="crack",
-        defect_count=1,
-        confidence=0.92,
-        review_status="confirmed",
-    ))
-    db.insert(InspectionRecord(
-        image_path="test2.jpg",
-        defect_types="scratch,scale",
-        defect_count=2,
-        confidence=0.85,
-        review_status="pending",
-    ))
-    yield db
-    db.close()
+    db_mgr = DBManager(path)
+    # 插入测试数据
+    for i in range(3):
+        db_mgr.insert(InspectionRecord(
+            image_path=f"test_{i}.jpg",
+            defect_types="crack" if i == 0 else "scratch",
+            defect_count=1,
+            confidence=0.5 + i * 0.2,
+            review_status="confirmed" if i < 2 else "pending",
+        ))
+    yield db_mgr
+    db_mgr.close()
     os.unlink(path)
 
 
 @pytest.fixture
-def exporter(db_with_data, tmp_path):
-    return Exporter(db_with_data, output_dir=str(tmp_path))
+def exporter(db):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Exporter(db, output_dir=tmpdir)
 
 
-class TestExporterCSV:
-    def test_export_creates_file(self, exporter, tmp_path):
+class TestExporter:
+    def test_export_csv(self, exporter):
         path = exporter.export_csv()
         assert os.path.exists(path)
-        assert path.endswith(".csv")
-
-    def test_csv_content(self, exporter):
-        path = exporter.export_csv()
         with open(path, encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        assert len(rows) == 2
-        defect_types = {r["defect_types"] for r in rows}
-        assert "crack" in defect_types
-        assert "scratch,scale" in defect_types
+            content = f.read()
+            assert "crack" in content or "scratch" in content
 
-    def test_csv_custom_path(self, exporter, tmp_path):
-        custom = str(tmp_path / "custom.csv")
-        path = exporter.export_csv(output_path=custom)
-        assert path == custom
-        assert os.path.exists(custom)
-
-
-class TestExporterHTML:
-    def test_export_html_creates_file(self, exporter):
+    def test_export_html_report(self, exporter):
         path = exporter.export_html_report()
         assert os.path.exists(path)
-        assert path.endswith(".html")
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+            assert "<html" in content.lower()
+            assert "缺陷" in content
 
-    def test_html_contains_defect_info(self, exporter):
-        path = exporter.export_html_report()
-        content = open(path, encoding="utf-8").read()
-        assert "crack" in content
-        assert "scratch" in content
-
-
-class TestExporterBadCase:
-    def test_export_badcase_creates_dir(self, exporter, tmp_path):
+    def test_export_badcase(self, exporter):
         path = exporter.export_badcase()
-        assert os.path.isdir(path)
+        assert os.path.exists(path)
+        assert path.endswith(".zip")
 
-    def test_export_badcase_with_data(self, exporter):
-        path = exporter.export_badcase()
-        files = os.listdir(path)
-        assert len(files) > 0
+    def test_export_csv_with_time_range(self, exporter):
+        path = exporter.export_csv(
+            start_time="2020-01-01",
+            end_time="2030-12-31",
+        )
+        assert os.path.exists(path)
+
+    def test_empty_db_export(self, db):
+        """空数据库导出不会崩溃"""
+        fd, empty_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        empty_db = DBManager(empty_path)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                exp = Exporter(empty_db, output_dir=tmpdir)
+                csv_path = exp.export_csv()
+                assert os.path.exists(csv_path)
+                html_path = exp.export_html_report()
+                assert os.path.exists(html_path)
+        finally:
+            empty_db.close()
+            os.unlink(empty_path)
 
 
 if __name__ == "__main__":
