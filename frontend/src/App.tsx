@@ -846,10 +846,10 @@ export default function App() {
       </header>
 
       {/* CORE WORKSPACE GRID SYSTEM - split grid with left controls panel, middle camera panel, right diagnostic report panel */}
-      <main className="flex-grow flex flex-col xl:grid xl:grid-cols-4 overflow-hidden p-4 gap-4 max-h-[calc(100vh-64px)]">
+      <main className="flex-grow flex flex-col lg:grid lg:grid-cols-4 lg:overflow-hidden p-4 gap-4 lg:max-h-[calc(100vh-64px)]">
         
         {/* PANEL 1: INGESTION & ADJUSTMENT (Side Panel Left) */}
-        <section id="panel_controls_id" className="xl:col-span-1 p-4 space-y-4 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-y-auto">
+        <section id="panel_controls_id" className="lg:col-span-1 p-4 space-y-4 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-y-auto">
           <div className="flex items-center gap-2 text-slate-800 border-b border-slate-100 pb-2">
             <Database className="h-4 w-4 text-blue-600" />
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">轧钢试样与材料录入</h2>
@@ -1151,7 +1151,7 @@ export default function App() {
         </section>
 
         {/* PANEL 2 & 3: CENTER DISPLAY & METALLURGY WORKSPACE RETICLE (Middle Panels) */}
-        <section className={`xl:col-span-2 flex flex-col bg-[#0F172A] overflow-hidden relative shadow-inner select-none transition-all duration-300 ease-in-out ${isFullscreen ? 'fixed inset-0 z-50 rounded-none border-0' : 'rounded-xl border border-slate-700'}`}>
+        <section className={`lg:col-span-2 flex flex-col bg-[#0F172A] overflow-hidden relative shadow-inner select-none transition-all duration-300 ease-in-out ${isFullscreen ? 'fixed inset-0 z-50 rounded-none border-0' : 'rounded-xl border border-slate-700'}`}>
           {/* Workstation Top Bar with Viewing Filters Mode Toggles - "五的抛光不错" Display calibration */}
           <div className="flex flex-wrap justify-between items-center gap-3 bg-[#0a101d] p-3 border-b border-slate-800">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
@@ -1395,7 +1395,7 @@ export default function App() {
         </section>
 
         {/* PANEL 4: METALLOGRAPHY DIAGNOSTICS TERMINAL (Right Panel) */}
-        <section className="xl:col-span-1 p-4 space-y-4 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-y-auto">
+        <section className="lg:col-span-1 p-4 space-y-4 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-y-auto">
           
           {/* AI DECISION GRADE METALLURGY METRICS - "二的布局不错" Metric layouts */}
           <div className="space-y-3">
