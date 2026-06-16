@@ -1,15 +1,20 @@
-# 钢铁表面缺陷检测系统 V3.1 (C++ + Vue 3)
+# 钢铁表面缺陷智能检测系统 (SteelEye React + FastAPI / C++ Drogon + Vue 3)
 
-[![C++](https://img.shields.io/badge/C%2B%2B-17-blue)](https://en.cppreference.com/)
-[![Vue](https://img.shields.io/badge/Vue-3.5-brightgreen)](https://vuejs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)](https://en.cppreference.com/)
+[![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Drogon](https://img.shields.io/badge/Drogon-1.9-red)](https://drogon.org)
-[![ONNX Runtime](https://img.shields.io/badge/ONNX--Runtime-1.15-purple)](https://onnxruntime.ai/)
 [![YOLO](https://img.shields.io/badge/YOLO-v8-orange)](https://ultralytics.com)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Gemini VLM](https://img.shields.io/badge/VLM-Qwen--VL--Max-purple)](https://deepmind.google/technologies/gemini/)
 
 ## 📝 项目概述
 
-基于 **高性能 C++ 边缘推理 (Drogon/ONNX) + Vue 3 现代化数字孪生中控大屏** 的工业级钢铁表面缺陷智能质检平台。
+本项目是一款工业级钢铁表面缺陷智能质检平台，采用双架构体系设计：
+1. **SteelEye 智能中控工作站 (React 19 + Python FastAPI)**：主力生产版本。集成 YOLOv8 快速筛查与云端 VLM 语义复核双引擎，引入 RAG 国家钢铁规范（如 `GB/T 3280-2015`）生成物理根因及处置对策；打通人工确权与后台异步增量重训的“数据飞轮”闭环，并内嵌“AI 工艺助理”提供自然语言故障提问。
+2. **高性能边缘检测端 (C++ Drogon + Vue 3)**：硬实时检测版本。在工控机上实现 C++ 图像预处理与 ONNX 推理，端到端延迟控制在 `< 2.0 ms`，吞吐量达 `> 500 FPS`，并以 SVG 物理数字孪生传送带呈现质检看板。
 
 ---
 
