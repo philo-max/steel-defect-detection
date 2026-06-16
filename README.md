@@ -26,37 +26,48 @@
 
 ## 🏗️ 技术架构
 
-系统采用工业前后端分离微服务技术架构设计：
-* **前端展示层 (Vue 3 + Vite + TypeScript)**：连接后端的 WebSocket 广播管道，实时同步检测帧、YOLO 缺陷坐标、ECharts 走势图并呈现高逼真的钢板传送 Marquee。
+系统采用工业前后端分离微服务技术架构设计，主要包含两个核心版本：
+
+### A. 生产级控制工作站（React 19 + Python FastAPI）
+* **前端展示层 (React 19 + TypeScript + Tailwind CSS)**：即 [SteelEye React 工作站](file:///f:/steel-defect-detection/frontend/)。包含真彩/应力/边缘/偏光多视图滤镜、Canvas 钢板高保真标样渲染、实时缺陷密度热力图、5 种生产角色管理权限，以及内嵌的“AI 工艺助理”浮动对话窗口。
+* **数据飞轮与服务后端 (FastAPI + SQLite WAL/SQLCipher)**：即 [server.py](file:///f:/steel-defect-detection/server.py)。在 YOLO 筛查与 VLM 复核基础上，实现 RAG 检索国家钢铁规范；支持人工修修正缺陷严重度与确权，提供后台 `/api/train/start` 异步增量重训及进度状态接口。
+
+### B. 高性能边缘微服务（C++ Drogon + Vue 3）
+* **前端展示层 (Vue 3 + Vite + TypeScript)**：连接后端的 WebSocket 广播管道，实时同步检测帧、YOLO 缺陷坐标并呈现 SVG 动态数字孪生传送带。
 * **边缘检测端 (C++ Drogon + ONNX Runtime)**：硬实时核心。拉取线阵相机流，执行图像预处理、YOLOv8 推理和 NMS (非极大值抑制)，并通过 WAL 高性能模式持久化至 SQLite。
-* **智慧决策端 (Python FastAPI + Gemini VLM + RAG)**：算法微服务大脑。调取本地 RAG 标准库检索国家 GB/T 标准规范（如 `GB/T 3280-2015`），通过 Gemini 视觉模型异步生成权威成因分析与工艺整改建议。
 
 ---
 
 ## 📂 项目子目录说明
 
-项目现在以多语言微服务子工程形式组织，结构更加清晰规范：
+项目以多语言、双版本混合子工程形式组织，结构如下：
 
 ```text
 f:/gangtiebiaomianquexian/steel-defect-detection/
-├── steel-defect-detection-vue/       # Vue 3 前端子项目 (Vite + TypeScript + Pinia)
+├── frontend/                         # SteelEye React 生产级前端 (React 19 + TS + Tailwind)
 │   ├── src/
-│   │   ├── main.ts                   # 注册 Pinia 状态与 Element Plus
-│   │   ├── style.css                 # 全局 Tailwinds CSS 与红色激光扫描线动效
-│   │   ├── store/defect.ts           # 核心状态管理（管理联机 WebSocket 及离线高保真仿真器）
-│   │   ├── components/ConveyorBelt   # 【数字孪生核心】SVG 旋转滚轮 + 钢板滑动 Marquee
-│   │   └── views/Dashboard.vue       # 钢铁之眼数字孪生中控面板（YOLO Canvas, ECharts看板）
+│   │   ├── App.tsx                   # 包含“数据飞轮控制台”与“AI工艺助理”悬浮对话框
+│   │   └── data/samples.ts           # Canvas 真彩钢板表面纹理及标样配置
 │   └── package.json                  # 前端依赖配置
 │
-├── steel-defect-detection-cpp/       # C++ 高性能边缘端 (CMake + Drogon + ONNX Runtime)
-│   ├── CMakeLists.txt                # 编译配置文件 (自动链接 OpenCV, SQLite3, ORT, Drogon)
-│   └── src/
-│       ├── YoloDetector.cpp          # YOLOv8 ONNX 预处理 (Planar CHW 转换) 与 NMS
-│       ├── DbManager.cpp             # 线程安全 C++ SQLite3 API (WAL模式, RAG国家标准匹配)
-│       └── main.cpp                  # Drogon Server 网关 (30FPS 相机多线程流水线)
+├── steel-defect-detection-vue/       # Vue 3 前端子项目 (Vite + TypeScript + Pinia)
+│   ├── src/
+│   │   ├── store/defect.ts           # 核心状态管理（WebSocket 连接与高保真仿真器）
+│   │   └── views/Dashboard.vue       # 钢铁之眼数字孪生中控面板
 │
-└── scripts/                          # Python 算法微服务网关
-    └── vue_api_bridge.py             # 完美的 Python 微服务网关 (提供与 C++ 100% 兼容的 API 兼容层)
+├── steel-defect-detection-cpp/       # C++ 高性能边缘端 (CMake + Drogon + ONNX Runtime)
+│   ├── CMakeLists.txt                # 编译配置文件
+│   └── src/
+│       ├── YoloDetector.cpp          # YOLOv8 ONNX 推理与 NMS
+│       └── DbManager.cpp             # 线程安全 C++ SQLite3 API
+│
+├── src/                              # Python 后端源代码目录
+│   ├── db_manager.py                 # SQLite SQLCipher 数据库持久层，支持已审核数据导出
+│   └── image_enhancer.py             # 引入 CLAHE 自适应直方图均衡化与拉普拉斯细节融合的增强器
+│
+├── server.py                         # Python FastAPI 异步重训与 RAG 融合后端入口
+└── scripts/                          # 辅助脚本与算法微服务网关
+    └── vue_api_bridge.py             # Python 微服务网关 (提供与 C++ 100% 兼容的 API 兼容层)
 ```
 
 ---
@@ -126,6 +137,30 @@ cmake --build . --config Release
    ```
 3. **访问大屏**：
    在浏览器中访问 [**`http://localhost:7860/`**](http://localhost:7860/)。该界面包含了实时检测（YOLO/VLM/RAG）、人工审核工作台与报表导出三大核心模块，即装即用。
+
+### 方案 E：React + Python 双引擎智能工作站（本期主打）
+
+如果您要运行并体验本项目最新开发完成的 React 19 + Python FastAPI 体系（含数据飞轮增量重训及 AI 工艺助理浮动窗口），请按以下步骤操作：
+
+1. **启动 FastAPI 后端服务**（运行于 8000 端口）：
+   ```powershell
+   # 激活虚拟环境并启动 API 服务
+   .venv\Scripts\python server.py
+   ```
+2. **启动 SteelEye React 前端服务**（运行于 5173 端口）：
+   ```powershell
+   # 进入前端目录安装依赖并启动
+   cd frontend
+   npm install
+   npm run dev
+   ```
+3. **访问系统**：
+   在浏览器中访问 [**`http://localhost:5173/`**](http://localhost:5173/)。
+   * **默认账户**：`admin` / `123456`。
+   * **特色功能**：
+     * 可视化：真彩、应力、边缘、偏光四通道 Canvas 滤镜与热力图。
+     * 数据飞轮：AI 工程师（`ai_engineer`）角色登录后可在控制面板一键启动后台增量重训并实时查看 Epoch、Loss 与 mAP 进度条。
+     * AI 助理：在页面右下角使用“AI 工艺助理”悬浮对话框，直接向后台大模型检索 RAG 冶金知识库，提供实时问答服务。
 
 ---
 
