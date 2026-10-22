@@ -10,6 +10,18 @@
 [![YOLO](https://img.shields.io/badge/YOLO-v8-orange)](https://ultralytics.com)
 [![Gemini VLM](https://img.shields.io/badge/VLM-Qwen--VL--Max-purple)](https://deepmind.google/technologies/gemini/)
 
+## 💻 Windows 客户端下载
+
+前往 [Releases](https://github.com/philo-max/steel-defect-detection/releases) 下载 `SteelDefectDetection-*-win64.zip`，解压后双击 `SteelDefectDetection.exe` 即可运行，无需安装 Python / Node。依赖 Windows 10/11 自带的 WebView2 运行库。
+
+自行打包：
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+pip install -r requirements.txt pyinstaller pywebview
+python -m PyInstaller SteelDefectDetection.spec --noconfirm --clean
+```
+
 ## 📝 项目概述
 
 本项目是一款工业级钢铁表面缺陷智能质检平台，采用双架构体系设计：
